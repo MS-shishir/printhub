@@ -8,7 +8,7 @@
 // 6. Post-Processing & Clean Transparent PNG Output
 
 import { removeBackground } from '@imgly/background-removal';
-import { removeBackgroundViaFastAPI, enhanceImageViaFastAPI } from '../../services/fastapiBgRemoval';
+import { removeBackgroundViaFastAPI, enhanceImageViaFastAPI, checkFastAPIBackendHealth } from '../../services/fastapiBgRemoval';
 import { BackgroundConfig, FaceDetectionResult } from '../types/passport-types';
 import { hexToRgb, isColorWithinTolerance, colorDistanceSq } from '../utils/color-utils';
 import { loadImage, createOffscreenCanvas } from '../utils/canvas-utils';
@@ -48,15 +48,20 @@ export async function removeBackgroundAI(
   const useFastAPI = options.useFastAPI ?? true;
 
   if (useFastAPI) {
-    try {
-      console.log('[FastAPI Pipeline] Initiating BiRefNet / RMBG-2.0 AI Background Removal...');
-      return await removeBackgroundViaFastAPI(src, {
-        model: options.model === 'rmbg' ? 'rmbg' : 'birefnet',
-        refine: true,
-        enhance: options.enhance ?? false
-      });
-    } catch (fastApiErr) {
-      console.warn('[FastAPI Pipeline Error / Offline Fallback]', fastApiErr);
+    const isBackendAvailable = await checkFastAPIBackendHealth();
+    if (isBackendAvailable) {
+      try {
+        console.log('[FastAPI Pipeline] Initiating BiRefNet / RMBG-2.0 AI Background Removal...');
+        return await removeBackgroundViaFastAPI(src, {
+          model: options.model === 'rmbg' ? 'rmbg' : 'birefnet',
+          refine: true,
+          enhance: options.enhance ?? false
+        });
+      } catch (fastApiErr) {
+        console.warn('[FastAPI Pipeline Error / Offline Fallback]', fastApiErr);
+      }
+    } else {
+      console.log('[FastAPI Offline] Backend server unavailable (<500ms check). Proceeding immediately with local WASM ISNet pipeline.');
     }
   }
 

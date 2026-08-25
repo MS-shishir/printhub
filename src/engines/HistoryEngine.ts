@@ -3,9 +3,29 @@
  * Manages non-destructive state snapshot stack with time-travel undo/redo capabilities.
  */
 
+function cloneState<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (obj instanceof Date) return new Date(obj.getTime()) as any;
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => cloneState(item)) as any;
+  }
+
+  const copy: any = {};
+  for (const key of Object.keys(obj)) {
+    // Preserve direct DOM/Canvas element references without cloning heavy buffers
+    if (key === '_rawSourceElement' || key === 'imageElement' || key === 'element' || key === 'canvasRef') {
+      copy[key] = (obj as any)[key];
+    } else {
+      copy[key] = cloneState((obj as any)[key]);
+    }
+  }
+  return copy;
+}
+
 export class HistoryEngine<T = any> {
-  private undoStack: T[] = [];
-  private redoStack: T[] = [];
+  private history: T[] = [];
+  private currentIndex: number = -1;
   private maxHistory: number;
 
   constructor(maxHistory: number = 50) {
@@ -13,68 +33,69 @@ export class HistoryEngine<T = any> {
   }
 
   /**
-   * Push a new state snapshot onto the history stack
+   * Push a new state snapshot onto the history timeline
    */
   public pushState(state: T): void {
-    // Deep clone state snapshot to prevent mutability leaks
-    const clone = JSON.parse(JSON.stringify(state));
-    this.undoStack.push(clone);
+    const clone = cloneState(state);
 
-    if (this.undoStack.length > this.maxHistory) {
-      this.undoStack.shift(); // Evict oldest
+    // Truncate any future redo branch if user performs new action after undo
+    if (this.currentIndex >= 0 && this.currentIndex < this.history.length - 1) {
+      this.history = this.history.slice(0, this.currentIndex + 1);
     }
 
-    // Clear redo stack on new action
-    this.redoStack = [];
+    this.history.push(clone);
+
+    if (this.history.length > this.maxHistory) {
+      this.history.shift();
+    } else {
+      this.currentIndex++;
+    }
   }
 
   /**
-   * Perform Undo and return the previous state
+   * Perform Undo and return the previous state snapshot
    */
   public undo(currentState?: T): T | null {
     if (!this.canUndo()) return null;
-
-    if (currentState) {
-      this.redoStack.push(JSON.parse(JSON.stringify(currentState)));
-    }
-
-    const previousState = this.undoStack.pop() || null;
-    return previousState;
+    this.currentIndex--;
+    return cloneState(this.history[this.currentIndex]);
   }
 
   /**
-   * Perform Redo and return the next state
+   * Perform Redo and return the next state snapshot
    */
   public redo(currentState?: T): T | null {
     if (!this.canRedo()) return null;
-
-    if (currentState) {
-      this.undoStack.push(JSON.parse(JSON.stringify(currentState)));
-    }
-
-    const nextState = this.redoStack.pop() || null;
-    return nextState;
+    this.currentIndex++;
+    return cloneState(this.history[this.currentIndex]);
   }
 
   public canUndo(): boolean {
-    return this.undoStack.length > 0;
+    return this.currentIndex > 0;
   }
 
   public canRedo(): boolean {
-    return this.redoStack.length > 0;
+    return this.currentIndex >= 0 && this.currentIndex < this.history.length - 1;
   }
 
   public clear(): void {
-    this.undoStack = [];
-    this.redoStack = [];
+    this.history = [];
+    this.currentIndex = -1;
+  }
+
+  public getCurrentState(): T | null {
+    if (this.currentIndex >= 0 && this.currentIndex < this.history.length) {
+      return cloneState(this.history[this.currentIndex]);
+    }
+    return null;
   }
 
   public getUndoCount(): number {
-    return this.undoStack.length;
+    return Math.max(0, this.currentIndex);
   }
 
   public getRedoCount(): number {
-    return this.redoStack.length;
+    return Math.max(0, this.history.length - 1 - this.currentIndex);
   }
 }
 

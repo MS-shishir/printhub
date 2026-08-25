@@ -24,6 +24,7 @@ import ConfirmDeleteModal from './photo/ConfirmDeleteModal';
 import ProcessingModal from './photo/ProcessingModal';
 import StudioToastModal, { ToastType } from './photo/StudioToastModal';
 import PortraitRetouchModal from '../passport-studio/components/modals/PortraitRetouchModal';
+import ResizeModal from './photo/ResizeModal';
 import { PassportStoreProvider } from '../passport-studio/store';
 import { MediaItem } from '../store/useProjectStore';
 
@@ -56,9 +57,23 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
   const [showRulers, setShowRulers] = useState<boolean>(true);
   const [showThirdsGuide, setShowThirdsGuide] = useState<boolean>(false);
   const [isRetouchModalOpen, setIsRetouchModalOpen] = useState<boolean>(false);
+  const [isResizeModalOpen, setIsResizeModalOpen] = useState<boolean>(false);
 
   const [cursorPos, setCursorPos] = useState({ x: 1200, y: 860 });
   const [imageDim, setImageDim] = useState({ w: 1920, h: 1280 });
+
+  const handleApplyResize = (newWidth: number, newHeight: number, dpi: number) => {
+    setImageDim({ w: newWidth, h: newHeight });
+    if (fabricCanvasRef.current) {
+      fabricCanvasRef.current.setDimensions({ width: newWidth, height: newHeight });
+      const activeObj = fabricCanvasRef.current.getActiveObject() || fabricCanvasRef.current.getObjects().find(o => o.isType('image'));
+      if (activeObj) {
+        activeObj.scaleToWidth(newWidth);
+        activeObj.scaleToHeight(newHeight);
+      }
+      fabricCanvasRef.current.renderAll();
+    }
+  };
 
   const [layers, setLayers] = useState<PhotoLayerItem[]>([]);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
@@ -115,8 +130,9 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       if (ctx) {
         ctx.drawImage(rawEl, 0, 0);
 
-        if (localAdjustmentsMode === 'local' && (localStack.length > 0 || (showMaskOverlay && activeLocalId))) {
-          const overlayTargetId = showMaskOverlay && activeLocalId ? activeLocalId : undefined;
+        if (localStack.length > 0) {
+          const showOverlay = localAdjustmentsMode === 'local' && showMaskOverlay && (activeTool === 'brush' || activeTool === 'eraser');
+          const overlayTargetId = showOverlay && activeLocalId ? activeLocalId : undefined;
           const resultCanvas = LocalAdjustmentEngine.applyLocalAdjustmentsToCanvas(
             srcCanvas,
             localStack,
@@ -124,7 +140,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
           );
           img.setElement(resultCanvas);
         } else {
-          // Revert to pristine raw source element in global mode
+          // Revert to pristine raw source element when local stack is empty
           img.setElement(rawEl);
         }
 
@@ -137,7 +153,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
 
   useEffect(() => {
     renderLocalAdjustments();
-  }, [localStack, activeLocalId, showMaskOverlay, localAdjustmentsMode]);
+  }, [localStack, activeLocalId, showMaskOverlay, localAdjustmentsMode, activeTool]);
 
   const handleAddLocalItem = (name?: string, region?: AiRegionType) => {
     const activeObj = fabricCanvasRef.current?.getActiveObject();
@@ -218,15 +234,26 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     const maskCanvas = LocalAdjustmentEngine.generateAiSemanticMask(sourceEl, region);
 
     const id = `ai-mask-${region}-${Date.now()}`;
+    let initialAdjustments: LocalAdjustmentValues = { ...DEFAULT_LOCAL_ADJUSTMENTS };
+    let displayName = `AI ${region.toUpperCase()} Mask`;
+
+    if (region === 'lips') {
+      displayName = 'AI Lips Pink Tint (ঠোঁট)';
+      initialAdjustments = { ...DEFAULT_LOCAL_ADJUSTMENTS, lipTint: 65, saturation: 35, tint: 25 };
+    } else if (region === 'kajal') {
+      displayName = 'AI Under-Eye Kajal (কাজল)';
+      initialAdjustments = { ...DEFAULT_LOCAL_ADJUSTMENTS, eyeKajal: 70, exposure: -40, contrast: 30 };
+    }
+
     const newItem: LocalAdjustmentStackItem = {
       id,
-      name: `AI ${region.toUpperCase()} Mask`,
+      name: displayName,
       regionType: region,
       visible: true,
       maskCanvas,
       feather: 12,
       opacity: 100,
-      adjustments: { ...DEFAULT_LOCAL_ADJUSTMENTS }
+      adjustments: initialAdjustments
     };
 
     setLocalStack((prev) => [newItem, ...prev]);
@@ -234,51 +261,79 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     showToast(`AI ${region.toUpperCase()} mask generated!`, 'success');
   };
 
-  // 50-Step Undo / Redo Canvas History Engine
-  const historyStackRef = useRef<string[]>([]);
-  const historyIndexRef = useRef<number>(-1);
+  const handleStartMakeupBrush = (type: 'kajal' | 'lips' | 'blush' | 'eyebrow') => {
+    if (!fabricCanvasRef.current) return;
+    const activeObj = fabricCanvasRef.current.getActiveObject();
+    const images = getImagesFromObject(activeObj, fabricCanvasRef.current);
+    const targetImg = images[0];
+    const rawEl = targetImg ? ((targetImg as any)._rawSourceElement || targetImg.getElement()) : null;
+
+    const w = rawEl?.naturalWidth || rawEl?.width || fabricCanvasRef.current?.width || 1200;
+    const h = rawEl?.naturalHeight || rawEl?.height || fabricCanvasRef.current?.height || 800;
+    const maskCanvas = LocalAdjustmentEngine.createMaskCanvas(w, h);
+
+    const id = `makeup-${type}-${Date.now()}`;
+    let name = 'Makeup Brush Stroke';
+    let adjustments: LocalAdjustmentValues = { ...DEFAULT_LOCAL_ADJUSTMENTS };
+    let bSize = 25;
+
+    if (type === 'kajal') {
+      name = '👁️ Kajal Pencil Stroke (চোখের কাজল)';
+      adjustments = { ...DEFAULT_LOCAL_ADJUSTMENTS, eyeKajal: 85, contrast: 40 };
+      bSize = 14;
+    } else if (type === 'lips') {
+      name = '👄 Lipstick Pink Stroke (ঠোঁট)';
+      adjustments = { ...DEFAULT_LOCAL_ADJUSTMENTS, lipTint: 80, saturation: 40, tint: 20 };
+      bSize = 22;
+    } else if (type === 'blush') {
+      name = '🌸 Cheek Blush Stroke (গালে গোলাপি)';
+      adjustments = { ...DEFAULT_LOCAL_ADJUSTMENTS, lipTint: 35, saturation: 25, brightness: 10 };
+      bSize = 45;
+    } else if (type === 'eyebrow') {
+      name = '👁️ Eyebrow Darkening (ভ্রু)';
+      adjustments = { ...DEFAULT_LOCAL_ADJUSTMENTS, eyeKajal: 70, contrast: 35 };
+      bSize = 16;
+    }
+
+    const newItem: LocalAdjustmentStackItem = {
+      id,
+      name,
+      regionType: 'custom',
+      visible: true,
+      maskCanvas,
+      feather: 8,
+      opacity: 100,
+      adjustments
+    };
+
+    setLocalStack((prev) => [newItem, ...prev]);
+    setActiveLocalId(id);
+    setLocalAdjustmentsMode('local');
+    setLocalBrushMode('brush');
+    setLocalBrushSize(bSize);
+    handleSelectTool('brush');
+
+    const msgBn = type === 'kajal' 
+      ? 'কাজল পেন্সিল চালু হয়েছে! ক্যানভাসে চোখের নিচে ব্রাশ করে আঁকুন।' 
+      : type === 'lips' 
+      ? 'ঠোঁটের ব্রাশ চালু হয়েছে! ক্যানভাসে ঠোঁটের উপর ব্রাশ করে মেখে দিন।' 
+      : 'মেকআপ ব্রাশ চালু হয়েছে! ক্যানভাসে ড্র্যাগ করে মেখে দিন।';
+
+    showToast(msgBn, 'success');
+  };
+
+  // 50-Step History Engine for Full State Snapshots (Canvas, Filters, Masks)
+  interface WorkspaceStateSnapshot {
+    canvasJson: any;
+    filterProps: ImageFilterProps;
+    localStack: LocalAdjustmentStackItem[];
+    photoName: string;
+  }
+
+  const historyEngineRef = useRef(new HistoryEngine<WorkspaceStateSnapshot>(50));
+  const [canUndo, setCanUndo] = useState<boolean>(false);
+  const [canRedo, setCanRedo] = useState<boolean>(false);
   const isUndoRedoActionRef = useRef<boolean>(false);
-
-  const saveCanvasHistory = () => {
-    if (!fabricCanvasRef.current || isUndoRedoActionRef.current) return;
-    const json = JSON.stringify(fabricCanvasRef.current.toJSON(['id', 'name']));
-    
-    // Discard future redo states if user performs new action after undo
-    const currentStack = historyStackRef.current.slice(0, historyIndexRef.current + 1);
-    currentStack.push(json);
-    if (currentStack.length > 50) currentStack.shift();
-    
-    historyStackRef.current = currentStack;
-    historyIndexRef.current = currentStack.length - 1;
-  };
-
-  const handleUndo = () => {
-    if (!fabricCanvasRef.current || historyIndexRef.current <= 0) return;
-    historyIndexRef.current -= 1;
-    const targetState = historyStackRef.current[historyIndexRef.current];
-    if (!targetState) return;
-
-    isUndoRedoActionRef.current = true;
-    fabricCanvasRef.current.loadFromJSON(targetState, () => {
-      fabricCanvasRef.current?.renderAll();
-      syncLayers();
-      isUndoRedoActionRef.current = false;
-    });
-  };
-
-  const handleRedo = () => {
-    if (!fabricCanvasRef.current || historyIndexRef.current >= historyStackRef.current.length - 1) return;
-    historyIndexRef.current += 1;
-    const targetState = historyStackRef.current[historyIndexRef.current];
-    if (!targetState) return;
-
-    isUndoRedoActionRef.current = true;
-    fabricCanvasRef.current.loadFromJSON(targetState, () => {
-      fabricCanvasRef.current?.renderAll();
-      syncLayers();
-      isUndoRedoActionRef.current = false;
-    });
-  };
 
   // 9-Category Master Filter State
   const [filterProps, setFilterProps] = useState<ImageFilterProps>({
@@ -300,6 +355,10 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     skinSmoothing: 0,
     teethWhitening: 0,
     faceLighting: 0,
+    lipRosyPink: 0,
+    underEyeKajal: 0,
+    eyebrowEnhance: 0,
+    blushRosy: 0,
     redEyeFix: false,
     oilyShineReduction: 0,
     bgColor: '#ffffff',
@@ -311,6 +370,117 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     brushColor: '#4f46e5',
     brushWidth: 10
   });
+
+  const filterPropsRef = useRef<ImageFilterProps>(filterProps);
+  useEffect(() => { filterPropsRef.current = filterProps; }, [filterProps]);
+
+  const localStackRef = useRef<LocalAdjustmentStackItem[]>(localStack);
+  useEffect(() => { localStackRef.current = localStack; }, [localStack]);
+
+  const saveDebounceTimerRef = useRef<any>(null);
+
+  const saveCanvasHistory = (immediate = false) => {
+    if (!fabricCanvasRef.current || isUndoRedoActionRef.current) return;
+
+    const doSave = () => {
+      if (!fabricCanvasRef.current || isUndoRedoActionRef.current) return;
+      const canvasJson = (fabricCanvasRef.current as any).toJSON(['id', 'name', '_rawSourceElement']);
+      const snapshot: WorkspaceStateSnapshot = {
+        canvasJson,
+        filterProps: { ...filterPropsRef.current },
+        localStack: [...localStackRef.current],
+        photoName,
+      };
+      historyEngineRef.current.pushState(snapshot);
+      setCanUndo(historyEngineRef.current.canUndo());
+      setCanRedo(historyEngineRef.current.canRedo());
+    };
+
+    if (immediate) {
+      if (saveDebounceTimerRef.current) clearTimeout(saveDebounceTimerRef.current);
+      doSave();
+    } else {
+      if (saveDebounceTimerRef.current) clearTimeout(saveDebounceTimerRef.current);
+      saveDebounceTimerRef.current = setTimeout(doSave, 350);
+    }
+  };
+
+  const handleUndo = () => {
+    if (!fabricCanvasRef.current || !historyEngineRef.current.canUndo()) return;
+
+    const prevSnapshot = historyEngineRef.current.undo();
+    if (!prevSnapshot) return;
+
+    isUndoRedoActionRef.current = true;
+
+    setFilterProps(prevSnapshot.filterProps);
+    filterPropsRef.current = prevSnapshot.filterProps;
+
+    setLocalStack(prevSnapshot.localStack);
+    localStackRef.current = prevSnapshot.localStack;
+
+    if (prevSnapshot.photoName) setPhotoName(prevSnapshot.photoName);
+
+    fabricCanvasRef.current.loadFromJSON(prevSnapshot.canvasJson, () => {
+      const objects = fabricCanvasRef.current?.getObjects() || [];
+      objects.forEach((obj: any) => {
+        if (obj.type === 'image' && !obj._rawSourceElement && obj.getElement()) {
+          obj._rawSourceElement = obj.getElement();
+        }
+      });
+
+      applyFabricFilters(prevSnapshot.filterProps);
+      fabricCanvasRef.current?.renderAll();
+      syncLayers();
+
+      isUndoRedoActionRef.current = false;
+      setCanUndo(historyEngineRef.current.canUndo());
+      setCanRedo(historyEngineRef.current.canRedo());
+    });
+  };
+
+  const handleRedo = () => {
+    if (!fabricCanvasRef.current || !historyEngineRef.current.canRedo()) return;
+
+    const nextSnapshot = historyEngineRef.current.redo();
+    if (!nextSnapshot) return;
+
+    isUndoRedoActionRef.current = true;
+
+    setFilterProps(nextSnapshot.filterProps);
+    filterPropsRef.current = nextSnapshot.filterProps;
+
+    setLocalStack(nextSnapshot.localStack);
+    localStackRef.current = nextSnapshot.localStack;
+
+    if (nextSnapshot.photoName) setPhotoName(nextSnapshot.photoName);
+
+    fabricCanvasRef.current.loadFromJSON(nextSnapshot.canvasJson, () => {
+      const objects = fabricCanvasRef.current?.getObjects() || [];
+      objects.forEach((obj: any) => {
+        if (obj.type === 'image' && !obj._rawSourceElement && obj.getElement()) {
+          obj._rawSourceElement = obj.getElement();
+        }
+      });
+
+      applyFabricFilters(nextSnapshot.filterProps);
+      fabricCanvasRef.current?.renderAll();
+      syncLayers();
+
+      isUndoRedoActionRef.current = false;
+      setCanUndo(historyEngineRef.current.canUndo());
+      setCanRedo(historyEngineRef.current.canRedo());
+    });
+  };
+
+  const handleFilterChange = (key: keyof ImageFilterProps, value: any) => {
+    setFilterProps((prev) => {
+      const updated = { ...prev, [key]: value };
+      applyFabricFilters(updated);
+      return updated;
+    });
+    saveCanvasHistory(false);
+  };
 
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [printCopies, setPrintCopies] = useState<number>(4);
@@ -517,7 +687,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
   const handleManualSave = () => {
     if (fabricCanvasRef.current && currentProjectId) {
       const jsonStr = JSON.stringify(fabricCanvasRef.current.toJSON());
-      const thumbData = fabricCanvasRef.current.toDataURL({ format: 'png', quality: 0.8 });
+      const thumbData = fabricCanvasRef.current.toDataURL({ format: 'png', quality: 0.8, multiplier: 1 });
       triggerAutoSave(jsonStr, thumbData);
       alert('Photo Studio project saved successfully!');
     }
@@ -652,6 +822,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
         setPhotoName(file.name);
         setImageDim({ w: imgObj.naturalWidth, h: imgObj.naturalHeight });
         onAddRecentFile(file.name, 'Photo');
+        saveCanvasHistory(true);
       };
     };
     reader.readAsDataURL(file);
@@ -672,6 +843,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       fabricCanvasRef.current?.renderAll();
       setPhotoName(item.name);
       syncLayers();
+      saveCanvasHistory(true);
     };
   };
 
@@ -761,26 +933,100 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     }
   };
 
+  // Active Tool & Mode Canvas State Sync
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    if (activeTool === 'move' || activeTool === 'select') {
+      canvas.isDrawingMode = false;
+      canvas.selection = true;
+      canvas.defaultCursor = 'default';
+      canvas.hoverCursor = 'move';
+      canvas.getObjects().forEach((obj) => {
+        if (!obj.lockMovementX) {
+          obj.selectable = true;
+          obj.evented = true;
+        }
+      });
+      canvas.renderAll();
+    } else if (activeTool === 'hand') {
+      canvas.isDrawingMode = false;
+      canvas.selection = false;
+      canvas.defaultCursor = 'grab';
+      canvas.hoverCursor = 'grab';
+    }
+  }, [activeTool, localAdjustmentsMode]);
+
   const handleSelectTool = (tool: ToolType) => {
     setActiveTool(tool);
-    if (!fabricCanvasRef.current) return;
 
-    if (tool === 'brush') {
-      fabricCanvasRef.current.isDrawingMode = true;
-      const brush = new fabric.PencilBrush(fabricCanvasRef.current);
-      brush.color = filterProps.brushColor;
-      brush.width = filterProps.brushWidth;
-      fabricCanvasRef.current.freeDrawingBrush = brush;
+    if (tool === 'move' || tool === 'select') {
+      setIsCropActive(false);
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        canvas.isDrawingMode = false;
+        canvas.selection = true;
+        canvas.defaultCursor = 'default';
+        canvas.hoverCursor = 'move';
+        canvas.getObjects().forEach((obj) => {
+          if (!obj.lockMovementX) {
+            obj.selectable = true;
+            obj.evented = true;
+          }
+        });
+        canvas.renderAll();
+      }
+    } else if (tool === 'brush') {
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        if (localAdjustmentsMode === 'local') {
+          canvas.isDrawingMode = false;
+          setLocalBrushMode('brush');
+        } else {
+          canvas.isDrawingMode = true;
+          const brush = new fabric.PencilBrush(canvas);
+          brush.color = filterProps.brushColor || '#4f46e5';
+          brush.width = filterProps.brushWidth || 10;
+          canvas.freeDrawingBrush = brush;
+        }
+      }
     } else if (tool === 'eraser') {
-      fabricCanvasRef.current.isDrawingMode = true;
-      const brush = new fabric.PencilBrush(fabricCanvasRef.current);
-      brush.color = '#ffffff';
-      brush.width = 24;
-      fabricCanvasRef.current.freeDrawingBrush = brush;
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        if (localAdjustmentsMode === 'local') {
+          canvas.isDrawingMode = false;
+          setLocalBrushMode('eraser');
+        } else {
+          canvas.isDrawingMode = true;
+          const brush = new fabric.PencilBrush(canvas);
+          brush.color = filterProps.bgColor || '#ffffff';
+          brush.width = 24;
+          canvas.freeDrawingBrush = brush;
+        }
+      }
+    } else if (tool === 'hand') {
+      if (localAdjustmentsMode === 'local') {
+        setLocalAdjustmentsMode('global');
+      }
+      setIsCropActive(false);
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
+        canvas.defaultCursor = 'grab';
+        canvas.hoverCursor = 'grab';
+      }
     } else {
-      fabricCanvasRef.current.isDrawingMode = false;
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        canvas.isDrawingMode = false;
+      }
       if (tool === 'clone') handleDuplicateActiveObject();
-      else if (tool === 'crop') setIsCropActive(true);
+      else if (tool === 'crop') {
+        if (localAdjustmentsMode === 'local') setLocalAdjustmentsMode('global');
+        setIsCropActive(true);
+      }
       else if (tool === 'ruler') setShowShoulderRuler((prev) => !prev);
       else if (tool === 'ai_bg' || tool === 'magic_remove') handleRemoveBg();
       else if (tool === 'pipette') showToast('Eyedropper Color Picker: Click any canvas element to sample color', 'info');
@@ -1084,15 +1330,18 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     if (!fabricCanvasRef.current) return;
     const active = fabricCanvasRef.current.getActiveObject();
     if (active) {
-      active.clone((cloned: fabric.Object) => {
-        cloned.set({ left: (cloned.left || 0) + 20, top: (cloned.top || 0) + 20 });
-        (cloned as any).id = `layer-${Date.now()}`;
-        (cloned as any).name = `${(active as any).name || 'Layer'} Copy`;
-        fabricCanvasRef.current?.add(cloned);
-        fabricCanvasRef.current?.setActiveObject(cloned);
-        fabricCanvasRef.current?.renderAll();
-        syncLayers();
-      });
+      const cloneRes = active.clone(['id', 'name']);
+      if (cloneRes && typeof (cloneRes as any).then === 'function') {
+        (cloneRes as Promise<any>).then((cloned) => {
+          cloned.set({ left: (cloned.left || 0) + 20, top: (cloned.top || 0) + 20 });
+          (cloned as any).id = `layer-${Date.now()}`;
+          (cloned as any).name = `${(active as any).name || 'Layer'} Copy`;
+          fabricCanvasRef.current?.add(cloned);
+          fabricCanvasRef.current?.setActiveObject(cloned);
+          fabricCanvasRef.current?.renderAll();
+          syncLayers();
+        });
+      }
     }
   };
 
@@ -1121,13 +1370,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     }
   };
 
-  const handleFilterChange = (key: keyof ImageFilterProps, val: any) => {
-    setFilterProps((prev) => {
-      const nextProps = { ...prev, [key]: val };
-      applyFabricFilters(nextProps);
-      return nextProps;
-    });
-  };
+
 
   const handleRemoveBg = async () => {
     if (!fabricCanvasRef.current) return;
@@ -1262,6 +1505,30 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     }
   };
 
+  const handleTransferToPassport = () => {
+    if (!fabricCanvasRef.current) return;
+
+    const dataUrl = fabricCanvasRef.current.toDataURL({
+      format: 'png',
+      quality: 1.0,
+      multiplier: 2
+    });
+
+    showToast(
+      language === 'bn' 
+        ? 'ফটো সফলভাবে পাসপোর্ট স্টুডিওতে পাঠানো হচ্ছে...' 
+        : 'Transferring photo to Passport Studio...',
+      'success'
+    );
+
+    window.dispatchEvent(new CustomEvent('printhub:transfer-to-passport', {
+      detail: {
+        dataUrl,
+        name: photoName ? photoName.replace(/\.[^/.]+$/, '_passport.png') : 'Edited_Passport_Photo.png'
+      }
+    }));
+  };
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden bg-slate-950 text-slate-100 select-none">
       
@@ -1278,13 +1545,15 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
         onZoomOut={handleZoomOut}
         onResetZoom={handleResetZoom}
         zoomPercent={zoomPercent}
-        onUndo={() => {}}
-        onRedo={() => {}}
-        canUndo={false}
-        canRedo={false}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onOpenPrintModal={() => setIsExportModalOpen(true)}
         onOpenAiEnhance={() => setIsRetouchModalOpen(true)}
         onExport={() => setIsExportModalOpen(true)}
+        onOpenResizeModal={() => setIsResizeModalOpen(true)}
+        onTransferToPassport={handleTransferToPassport}
         onManualSave={handleManualSave}
         onDeleteSelected={handleDeleteSelected}
         onRotateActive={handleRotateActiveObject}
@@ -1327,7 +1596,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
             onCropBoxChange={setCropBox}
             onApplyCrop={handleApplyCrop}
             onCancelCrop={() => { setIsCropActive(false); setCropBox(null); }}
-            isLocalPaintingActive={localAdjustmentsMode === 'local'}
+            isLocalPaintingActive={localAdjustmentsMode === 'local' && (activeTool === 'brush' || activeTool === 'eraser')}
             activeMaskCanvas={localStack.find((s) => s.id === activeLocalId)?.maskCanvas || null}
             localBrushSize={localBrushSize}
             localBrushMode={localBrushMode}
@@ -1385,6 +1654,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
                 onInvertLocalMask={handleInvertLocalMask}
                 onClearLocalMask={handleClearLocalMask}
                 onTriggerAiSelect={handleTriggerAiSelect}
+                onStartMakeupBrush={handleStartMakeupBrush}
                 showMaskOverlay={showMaskOverlay}
                 onToggleShowMaskOverlay={() => setShowMaskOverlay(!showMaskOverlay)}
                 localBrushMode={localBrushMode}
@@ -1485,6 +1755,16 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
         title={toastState.title}
         message={toastState.message}
         type={toastState.type}
+        language={language}
+      />
+
+      {/* Manual Pixel Dimension & DPI Resize Modal */}
+      <ResizeModal
+        isOpen={isResizeModalOpen}
+        onClose={() => setIsResizeModalOpen(false)}
+        currentWidth={imageDim.w}
+        currentHeight={imageDim.h}
+        onApplyResize={handleApplyResize}
         language={language}
       />
     </div>

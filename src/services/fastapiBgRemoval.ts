@@ -270,13 +270,28 @@ export async function retouchPassportPhotoViaFastAPI(
   }
 }
 
+let cachedBackendHealth: { isHealthy: boolean; timestamp: number } | null = null;
+const HEALTH_CACHE_TTL_MS = 5000; // 5 seconds
+
 export async function checkFastAPIBackendHealth(backendUrl = DEFAULT_BACKEND_URL): Promise<boolean> {
+  const now = Date.now();
+  if (cachedBackendHealth && (now - cachedBackendHealth.timestamp) < HEALTH_CACHE_TTL_MS) {
+    return cachedBackendHealth.isHealthy;
+  }
+
   try {
-    const res = await fetch(`${backendUrl}/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
-    return res.ok;
+    const res = await fetch(`${backendUrl}/health`, { 
+      method: 'GET', 
+      signal: AbortSignal.timeout(500) // Fast 500ms check
+    });
+    const isHealthy = res.ok;
+    cachedBackendHealth = { isHealthy, timestamp: now };
+    return isHealthy;
   } catch {
+    cachedBackendHealth = { isHealthy: false, timestamp: now };
     return false;
   }
 }
+
 
 

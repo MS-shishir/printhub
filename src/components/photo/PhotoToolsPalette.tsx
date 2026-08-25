@@ -1,7 +1,7 @@
 /**
  * PhotoToolsPalette.tsx
- * Pure Photo Editing Tool Palette
- * Clean, compact, 2-column layout focused exclusively on photo retouching & adjustment.
+ * Senior UI/UX Professional Photo Editing Tool Palette
+ * Clean, balanced 2-column layout with 0 text truncation, hotkey badges, and active state highlights.
  */
 
 import React, { useRef } from 'react';
@@ -22,37 +22,38 @@ interface PhotoToolsPaletteProps {
   language: 'en' | 'bn';
 }
 
-const TOOL_LIST: { id: ToolType; icon: any; nameEn: string; nameBn: string }[] = [
-  { id: 'move', icon: Move, nameEn: 'Move Tool', nameBn: 'মুভ (V)' },
-  { id: 'select', icon: MousePointer, nameEn: 'Selection', nameBn: 'সিলেকশন' },
-  { id: 'crop', icon: CropIcon, nameEn: 'Crop Tool', nameBn: 'ক্রপ (C)' },
-  { id: 'ruler', icon: Ruler, nameEn: 'Passport Ruler', nameBn: 'রুলার' },
-  { id: 'brush', icon: Brush, nameEn: 'Brush', nameBn: 'ব্রাশ (B)' },
-  { id: 'eraser', icon: Eraser, nameEn: 'Eraser', nameBn: 'ইরেজার (E)' },
-  { id: 'clone', icon: Copy, nameEn: 'Clone Stamp', nameBn: 'ক্লোন' },
-  { id: 'magic_remove', icon: Wand2, nameEn: 'Magic Eraser', nameBn: 'ম্যাজিক' },
-  { id: 'ai_bg', icon: Sparkles, nameEn: 'AI BG Remove', nameBn: 'AI রিমুভ' },
-  { id: 'pipette', icon: Pipette, nameEn: 'Eyedropper', nameBn: 'আইড্রপার' },
-  { id: 'blur', icon: Droplet, nameEn: 'Blur', nameBn: 'ব্লার' },
-  { id: 'sharpen', icon: Sun, nameEn: 'Sharpen', nameBn: 'শার্পেন' },
-  { id: 'dodge', icon: Contrast, nameEn: 'Dodge Lighten', nameBn: 'ডজ' },
-  { id: 'burn', icon: Flame, nameEn: 'Burn Darken', nameBn: 'বার্ন' },
-  { id: 'zoom', icon: ZoomIn, nameEn: 'Zoom In', nameBn: 'জুম (Z)' },
-  { id: 'hand', icon: Hand, nameEn: 'Pan Hand', nameBn: 'প্যান (H)' },
+const TOOL_LIST: { id: ToolType; icon: any; nameEn: string; nameBn: string; hotkey?: string }[] = [
+  { id: 'move', icon: Move, nameEn: 'Move', nameBn: 'মুভ', hotkey: 'V' },
+  { id: 'select', icon: MousePointer, nameEn: 'Select', nameBn: 'সিলেকশন', hotkey: 'M' },
+  { id: 'crop', icon: CropIcon, nameEn: 'Crop', nameBn: 'ক্রপ', hotkey: 'C' },
+  { id: 'ruler', icon: Ruler, nameEn: 'Ruler', nameBn: 'রুলার', hotkey: 'R' },
+  { id: 'brush', icon: Brush, nameEn: 'Brush', nameBn: 'ব্রাশ', hotkey: 'B' },
+  { id: 'eraser', icon: Eraser, nameEn: 'Eraser', nameBn: 'ইরেজার', hotkey: 'E' },
+  { id: 'clone', icon: Copy, nameEn: 'Clone', nameBn: 'ক্লোন', hotkey: 'S' },
+  { id: 'magic_remove', icon: Wand2, nameEn: 'Magic', nameBn: 'ম্যাজিক', hotkey: 'W' },
+  { id: 'ai_bg', icon: Sparkles, nameEn: 'AI BG', nameBn: 'AI রিমুভ', hotkey: 'A' },
+  { id: 'pipette', icon: Pipette, nameEn: 'Picker', nameBn: 'আইড্রপার', hotkey: 'I' },
+  { id: 'blur', icon: Droplet, nameEn: 'Blur', nameBn: 'ব্লার', hotkey: 'U' },
+  { id: 'sharpen', icon: Sun, nameEn: 'Sharpen', nameBn: 'শার্পেন', hotkey: 'P' },
+  { id: 'dodge', icon: Contrast, nameEn: 'Dodge', nameBn: 'ডজ', hotkey: 'D' },
+  { id: 'burn', icon: Flame, nameEn: 'Burn', nameBn: 'বার্ন', hotkey: 'O' },
+  { id: 'zoom', icon: ZoomIn, nameEn: 'Zoom', nameBn: 'জুম', hotkey: 'Z' },
+  { id: 'hand', icon: Hand, nameEn: 'Pan', nameBn: 'প্যান', hotkey: 'H' },
 ];
 
 export default function PhotoToolsPalette({ activeTool, onSelectTool, onImportImage, language }: PhotoToolsPaletteProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <aside className="w-[92px] bg-slate-900 border-r border-slate-800 flex flex-col items-center py-2 shrink-0 z-20 overflow-hidden select-none">
-      <div className="w-full px-1.5 mb-2">
+    <aside className="w-[110px] bg-slate-900 border-r border-slate-800 flex flex-col items-center py-2 shrink-0 z-20 overflow-hidden select-none">
+      {/* Upload Button */}
+      <div className="w-full px-2 mb-2">
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full flex flex-col items-center justify-center p-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-[11px] shadow-lg transition-all active:scale-95 border border-indigo-400/30"
-          title="Import Photo"
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-extrabold text-[11px] shadow-md shadow-indigo-900/30 transition-all active:scale-95 border border-indigo-400/30 cursor-pointer"
+          title={language === 'bn' ? 'ফটো আপলোড করুন' : 'Import Photo'}
         >
-          <Upload className="w-4 h-4 mb-0.5" />
+          <Upload className="w-3.5 h-3.5" />
           <span>{language === 'bn' ? 'আপলোড' : 'Import'}</span>
         </button>
         <input
@@ -64,28 +65,42 @@ export default function PhotoToolsPalette({ activeTool, onSelectTool, onImportIm
         />
       </div>
 
-      <div className="w-full border-t border-slate-800 my-1" />
+      <div className="w-full border-t border-slate-800/80 mb-2" />
 
-      {/* 2-Column Responsive Compact Grid Layout */}
-      <div className="w-full px-1 grid grid-cols-2 gap-1 overflow-hidden">
+      {/* 2-Column Balanced Tool Grid (w-[110px] allows 50px per column with 0 truncation) */}
+      <div className="w-full px-1.5 grid grid-cols-2 gap-1.5 overflow-y-auto max-h-[calc(100vh-140px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {TOOL_LIST.map((t) => {
           const Icon = t.icon;
           const isActive = activeTool === t.id;
+          const label = language === 'bn' ? t.nameBn : t.nameEn;
+
           return (
             <button
               key={t.id}
               onClick={() => onSelectTool(t.id)}
-              className={`relative flex flex-col items-center justify-center py-2 rounded-xl transition-all ${
+              className={`group relative flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-indigo-600 text-white shadow-md border border-indigo-400/40'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/80 border border-transparent'
+                  ? 'bg-gradient-to-b from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-600/30 border border-indigo-400/40'
+                  : 'bg-slate-950/40 hover:bg-slate-800 text-slate-400 hover:text-slate-100 border border-slate-800/40'
               }`}
-              title={language === 'bn' ? t.nameBn : t.nameEn}
+              title={`${t.nameEn} ${t.hotkey ? `(${t.hotkey})` : ''}`}
             >
-              <Icon className="w-4 h-4 mb-0.5 stroke-[2.2]" />
-              <span className="text-[10.5px] font-bold tracking-tight text-center leading-tight truncate w-full px-0.5">
-                {t.nameBn}
+              <Icon className={`w-4 h-4 mb-1 transition-transform group-hover:scale-110 ${isActive ? 'text-white' : 'text-slate-300'}`} />
+              
+              <span className={`text-[10px] font-bold tracking-tight text-center leading-tight whitespace-nowrap overflow-hidden text-ellipsis w-full px-0.5 ${
+                isActive ? 'text-white font-extrabold' : 'text-slate-300 group-hover:text-white'
+              }`}>
+                {label}
               </span>
+
+              {/* Hotkey Badge */}
+              {t.hotkey && (
+                <span className={`absolute top-0.5 right-1 text-[8px] font-mono font-bold opacity-0 group-hover:opacity-100 transition-opacity ${
+                  isActive ? 'text-indigo-200 opacity-80' : 'text-slate-500'
+                }`}>
+                  {t.hotkey}
+                </span>
+              )}
             </button>
           );
         })}
@@ -93,3 +108,4 @@ export default function PhotoToolsPalette({ activeTool, onSelectTool, onImportIm
     </aside>
   );
 }
+

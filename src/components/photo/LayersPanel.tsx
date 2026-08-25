@@ -49,7 +49,7 @@ export default function LayersPanel({
   onUngroupLayers,
   language
 }: LayersPanelProps) {
-  const [activeTab, setActiveTab] = useState<'layers' | 'history'>('layers');
+  const [activeTab, setActiveTab] = useState<'layers' | 'history' | 'channels' | 'paths'>('layers');
   const [blendMode, setBlendMode] = useState<string>('Normal');
   const [opacityVal, setOpacityVal] = useState<number>(100);
   const [fillVal, setFillVal] = useState<number>(100);

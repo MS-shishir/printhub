@@ -16,10 +16,12 @@ export interface LocalAdjustmentValues {
   tint: number;        // -100 to 100
   sharpness: number;   // 0 to 100
   clarity: number;     // 0 to 100
+  lipTint?: number;     // 0 to 100 (Lip Pink/Red Tint)
+  eyeKajal?: number;    // 0 to 100 (Under-Eye Eyeliner/Darkening)
 }
 
 export type AiRegionType = 
-  | 'face' | 'skin' | 'neck' | 'hair' | 'eyes' | 'clothes' | 'background' | 'subject';
+  | 'face' | 'skin' | 'lips' | 'kajal' | 'neck' | 'hair' | 'eyes' | 'clothes' | 'background' | 'subject';
 
 export interface LocalAdjustmentStackItem {
   id: string;
@@ -42,7 +44,9 @@ export const DEFAULT_LOCAL_ADJUSTMENTS: LocalAdjustmentValues = {
   temperature: 0,
   tint: 0,
   sharpness: 0,
-  clarity: 0
+  clarity: 0,
+  lipTint: 0,
+  eyeKajal: 0
 };
 
 export class LocalAdjustmentEngine {
@@ -205,6 +209,43 @@ export class LocalAdjustmentEngine {
             if (isSkinColor && distSq <= 2.8) {
               isSelected = true;
               matchAlpha = 230;
+            }
+            break;
+
+          case 'lips':
+            // Lower facial lip region (mouth ellipse + reddish hue)
+            const lipY = cy + faceRy * 0.48;
+            const lipX = cx;
+            const lipRx = faceRx * 0.42;
+            const lipRy = faceRy * 0.18;
+            const lipDx = (x - lipX) / lipRx;
+            const lipDy = (y - lipY) / lipRy;
+            const lipDistSq = lipDx * lipDx + lipDy * lipDy;
+            if (lipDistSq <= 1.0) {
+              isSelected = true;
+              matchAlpha = Math.round(255 * (1 - Math.sqrt(lipDistSq) * 0.3));
+            }
+            break;
+
+          case 'kajal':
+            // Under-eye eyeliner & kajal contour (lower eye curve)
+            const kajalY = cy - faceRy * 0.16;
+            const leftKajalX = cx - faceRx * 0.45;
+            const rightKajalX = cx + faceRx * 0.45;
+            const kajalRadiusX = faceRx * 0.32;
+            const kajalRadiusY = faceRy * 0.12;
+            
+            const dKajalLeftX = (x - leftKajalX) / kajalRadiusX;
+            const dKajalLeftY = (y - kajalY) / kajalRadiusY;
+            const dKajalRightX = (x - rightKajalX) / kajalRadiusX;
+            const dKajalRightY = (y - kajalY) / kajalRadiusY;
+            
+            const isLeftKajal = (dKajalLeftX * dKajalLeftX + dKajalLeftY * dKajalLeftY <= 1.0) && (y >= kajalY - 2);
+            const isRightKajal = (dKajalRightX * dKajalRightX + dKajalRightY * dKajalRightY <= 1.0) && (y >= kajalY - 2);
+            
+            if (isLeftKajal || isRightKajal) {
+              isSelected = true;
+              matchAlpha = 240;
             }
             break;
 
@@ -407,6 +448,22 @@ export class LocalAdjustmentEngine {
           r = gray + (r - gray) * (1 + satFactor);
           g = gray + (g - gray) * (1 + satFactor);
           bl = gray + (bl - gray) * (1 + satFactor);
+        }
+
+        // 5. Lip Rosy Pink Tint (Lipstick)
+        if (adj.lipTint && adj.lipTint !== 0) {
+          const factor = (adj.lipTint / 100);
+          r += 95 * factor;
+          g += 15 * factor;
+          bl += 50 * factor;
+        }
+
+        // 6. Under-Eye Kajal / Eyeliner (Deep Dark Contour)
+        if (adj.eyeKajal && adj.eyeKajal !== 0) {
+          const factor = (adj.eyeKajal / 100);
+          r -= r * 0.75 * factor + 25 * factor;
+          g -= g * 0.75 * factor + 25 * factor;
+          bl -= bl * 0.75 * factor + 25 * factor;
         }
 
         // Clamp pixel values

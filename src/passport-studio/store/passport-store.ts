@@ -112,15 +112,28 @@ const initialState: PassportState = {
   historyIndex: -1,
 };
 
-// Helper to push history entry on state modifications
+// Helper to push history entry on state modifications (350ms window debouncing for mouse drags)
 function pushHistory(state: PassportState, nextState: Partial<PassportState>): PassportState {
   const transform = nextState.transform || state.transform;
   const cropArea = nextState.cropArea !== undefined ? nextState.cropArea : state.cropArea;
   const bgConfig = nextState.bgConfig || state.bgConfig;
 
   const currentEntry = { transform, cropArea, bgConfig, timestamp: Date.now() };
+
+  // Overwrite recent entry within 350ms window so dragging pan/zoom produces 1 discrete undo step
+  const lastEntry = state.history[state.historyIndex];
+  if (lastEntry && (currentEntry.timestamp - (lastEntry.timestamp || 0) < 350)) {
+    const updatedHistory = [...state.history];
+    updatedHistory[state.historyIndex] = currentEntry;
+    return {
+      ...state,
+      ...nextState,
+      history: updatedHistory,
+    };
+  }
+
   const newHistory = [...state.history.slice(0, state.historyIndex + 1), currentEntry];
-  if (newHistory.length > 30) newHistory.shift();
+  if (newHistory.length > 50) newHistory.shift();
 
   return {
     ...state,

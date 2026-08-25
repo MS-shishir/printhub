@@ -82,6 +82,25 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  // Listen for direct transfer from Photo Lab Editor -> Passport Studio
+  useEffect(() => {
+    const handleTransferToPassport = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      setActiveModule('passport');
+
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('printhub:load-passport-photo', {
+          detail: customEvt.detail
+        }));
+      }, 150);
+    };
+
+    window.addEventListener('printhub:transfer-to-passport', handleTransferToPassport);
+    return () => {
+      window.removeEventListener('printhub:transfer-to-passport', handleTransferToPassport);
+    };
+  }, []);
+
   // 2. Global Keyboard Shortcuts Handler (Ctrl+S, Ctrl+P, Alt+1, Alt+2, F11, ?)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

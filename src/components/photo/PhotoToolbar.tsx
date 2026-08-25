@@ -30,6 +30,8 @@ interface PhotoToolbarProps {
   onOpenPrintModal: () => void;
   onOpenAiEnhance: () => void;
   onExport: () => void;
+  onOpenResizeModal?: () => void;
+  onTransferToPassport?: () => void;
   onManualSave?: () => void;
   onDeleteSelected?: () => void;
   onRotateActive?: () => void;
@@ -60,6 +62,8 @@ export default function PhotoToolbar({
   onOpenPrintModal,
   onOpenAiEnhance,
   onExport,
+  onOpenResizeModal,
+  onTransferToPassport,
   onManualSave,
   onDeleteSelected,
   onRotateActive,
@@ -111,6 +115,17 @@ export default function PhotoToolbar({
             <Upload className="w-3.5 h-3.5" />
             <span>Upload Photo</span>
           </button>
+
+          {onOpenResizeModal && (
+            <button
+              onClick={onOpenResizeModal}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition-all"
+              title="Resize Image Canvas (Dimensions & DPI)"
+            >
+              <Maximize className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Resize...</span>
+            </button>
+          )}
 
           <div className="h-4 w-px bg-slate-800 mx-0.5" />
 
@@ -200,6 +215,16 @@ export default function PhotoToolbar({
 
         {/* Right Output Action Buttons */}
         <div className="flex items-center gap-2">
+          {/* Send to Passport Studio 1-Click Action */}
+          <button
+            onClick={onTransferToPassport}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-900/30 transition-all border border-emerald-400/30"
+            title={language === 'bn' ? 'এডিট করা ছবি সরাসরি পাসপোর্ট স্টুডিওতে পাঠান' : 'Send Edited Photo to Passport Studio'}
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-emerald-200" />
+            <span>{language === 'bn' ? 'পাসপোর্ট স্টুডিওতে পাঠান' : 'To Passport Studio'}</span>
+          </button>
+
           {/* Glowing AI Enhance Button */}
           <button
             onClick={onOpenAiEnhance}

@@ -43,7 +43,7 @@ function ToastStack() {
 // ─── Inner Component (needs store context) ────────────────────────────────
 function PassportStudioInner({ onAddRecentFile }: PassportStudioProps) {
   const { state, dispatch } = usePassportStore();
-  const { handlePaste, handleKeyboard } = usePassportWorkflow();
+  const { handlePaste, handleKeyboard, loadImageFromDataUrl } = usePassportWorkflow();
   const editorRef = useRef<CanvasEditorHandle | null>(null);
 
   // Register global keyboard + paste handlers & export triggers
@@ -52,15 +52,25 @@ function PassportStudioInner({ onAddRecentFile }: PassportStudioProps) {
       dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'export' });
     };
 
+    const handleLoadPassportPhoto = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      const { dataUrl, name } = customEvt.detail || {};
+      if (dataUrl) {
+        loadImageFromDataUrl(dataUrl, name || 'Edited_Passport_Photo.png');
+      }
+    };
+
     document.addEventListener('keydown', handleKeyboard);
     document.addEventListener('paste', handlePaste as EventListener);
     window.addEventListener('printhub:open-passport-export', handleOpenExport);
+    window.addEventListener('printhub:load-passport-photo', handleLoadPassportPhoto);
     return () => {
       document.removeEventListener('keydown', handleKeyboard);
       document.removeEventListener('paste', handlePaste as EventListener);
       window.removeEventListener('printhub:open-passport-export', handleOpenExport);
+      window.removeEventListener('printhub:load-passport-photo', handleLoadPassportPhoto);
     };
-  }, [handleKeyboard, handlePaste, dispatch]);
+  }, [handleKeyboard, handlePaste, dispatch, loadImageFromDataUrl]);
 
   // Report new files to parent
   useEffect(() => {

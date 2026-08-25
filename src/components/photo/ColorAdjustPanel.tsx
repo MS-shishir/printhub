@@ -31,10 +31,14 @@ export interface ImageFilterProps {
   clarity: number;
   blur: number;
   sharpen: number;
-  // Retouching (Identity-Preserving)
+  // Retouching (Identity-Preserving Beauty Suite)
   skinSmoothing: number;
   teethWhitening: number;
   faceLighting: number;
+  lipRosyPink: number;   // 👄 Lip Pink Tint / ঠোঁটে গোলাপি ভাব (0 to 100)
+  underEyeKajal: number; // 👁️ Under-Eye Kajal / চোখের নিচে কাজল (0 to 100)
+  eyebrowEnhance: number; // 👁️ Eyebrows / ভ্রু গাড় করা (0 to 100)
+  blushRosy: number;      // 🌸 Cheek Blush / গালে গোলাপি (0 to 100)
   redEyeFix: boolean;
   oilyShineReduction: number;
   // Canvas & Background
@@ -67,6 +71,7 @@ interface ColorAdjustPanelProps {
   onInvertLocalMask?: (id: string) => void;
   onClearLocalMask?: (id: string) => void;
   onTriggerAiSelect?: (region: AiRegionType) => void;
+  onStartMakeupBrush?: (type: 'kajal' | 'lips' | 'blush' | 'eyebrow') => void;
   showMaskOverlay?: boolean;
   onToggleShowMaskOverlay?: () => void;
   localBrushMode?: 'brush' | 'eraser';
@@ -114,6 +119,7 @@ export default function ColorAdjustPanel({
   onInvertLocalMask,
   onClearLocalMask,
   onTriggerAiSelect,
+  onStartMakeupBrush,
   showMaskOverlay = true,
   onToggleShowMaskOverlay,
   localBrushMode = 'brush',
@@ -183,6 +189,8 @@ export default function ColorAdjustPanel({
   const aiRegions: { id: AiRegionType; label: string; icon: any; color: string }[] = [
     { id: 'face', label: 'Face', icon: Smile, color: 'text-amber-400' },
     { id: 'skin', label: 'Skin', icon: Sparkles, color: 'text-pink-400' },
+    { id: 'lips', label: 'Lips (ঠোঁট)', icon: Smile, color: 'text-rose-400' },
+    { id: 'kajal', label: 'Kajal (কাজল)', icon: Eye, color: 'text-purple-400' },
     { id: 'neck', label: 'Neck', icon: User, color: 'text-cyan-400' },
     { id: 'hair', label: 'Hair', icon: Sparkles, color: 'text-purple-400' },
     { id: 'eyes', label: 'Eyes', icon: Eye, color: 'text-sky-400' },
@@ -193,29 +201,34 @@ export default function ColorAdjustPanel({
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col text-xs select-none shadow-2xl">
-      {/* Sub-Tabs (2-Row Grid containing all 7 tabs) */}
-      <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1.5 border-b border-slate-800/80">
+      {/* Premium Senior UI/UX Horizontal Scrollable Sub-Tabs */}
+      <div className="flex items-center gap-1.5 bg-slate-950 p-2 border-b border-slate-800/80 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] shrink-0 select-none">
         {[
-          { id: 'properties', label: 'Adjust' },
-          { id: 'retouch', label: 'Retouch' },
-          { id: 'background', label: 'Background' },
-          { id: 'effects', label: 'Filters' },
-          { id: 'ai_tools', label: 'AI Suite' },
-          { id: 'brand_kit', label: 'Brand Kit' },
-          { id: 'templates', label: 'Templates' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`py-1.5 text-[10px] font-extrabold rounded-lg uppercase tracking-wider transition-all text-center ${
-              activeTab === tab.id
-                ? 'bg-indigo-600 text-white shadow-md border border-indigo-500/40'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+          { id: 'properties', label: language === 'bn' ? 'এডজাস্ট' : 'Adjust', icon: SlidersHorizontal },
+          { id: 'retouch', label: language === 'bn' ? 'রিটাচ' : 'Retouch', icon: Sparkles },
+          { id: 'background', label: language === 'bn' ? 'ব্যাকগ্রাউন্ড' : 'Background', icon: ImageIcon },
+          { id: 'effects', label: language === 'bn' ? 'ফিল্টারস' : 'Filters', icon: Palette },
+          { id: 'ai_tools', label: language === 'bn' ? 'এআই স্যুট' : 'AI Suite', icon: Wand2 },
+          { id: 'brand_kit', label: language === 'bn' ? 'ব্র্যান্ড কিট' : 'Brand Kit', icon: Bookmark },
+          { id: 'templates', label: language === 'bn' ? 'টেমপ্লেটস' : 'Templates', icon: LayoutTemplate },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-extrabold rounded-xl shrink-0 transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-400/40'
+                  : 'bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800/60'
+              }`}
+            >
+              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-200' : 'text-slate-400'}`} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="p-3 space-y-4 max-h-[540px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
@@ -758,11 +771,120 @@ export default function ColorAdjustPanel({
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <span className="font-extrabold text-pink-400 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                 <Smile className="w-3.5 h-3.5" />
-                Identity-Preserving Retouch
+                Identity-Preserving Retouch & Makeup
               </span>
             </div>
 
-            <div className="space-y-2">
+            {/* Precision Brush Makeup Suite */}
+            <div className="space-y-1.5 bg-slate-950 p-2.5 rounded-xl border border-pink-500/40 shadow-lg">
+              <span className="text-[10px] font-extrabold text-pink-400 uppercase tracking-wider flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Brush className="w-3.5 h-3.5 text-pink-400" />
+                  {language === 'bn' ? 'ম্যানুয়াল মেকআপ ব্রাশ (Precision Brushes)' : 'Precision Makeup Brushes'}
+                </span>
+              </span>
+              <p className="text-[9.5px] text-slate-400 leading-tight">
+                {language === 'bn' 
+                  ? 'বাটনে ক্লিক করে ক্যানভাসে সরাসরি ব্রাশ দিয়ে মেখে দিন। যেখানে ব্রাশ করবেন শুধু সেখানেই মেকআপ বসবে।' 
+                  : 'Click a brush, then drag on canvas over eyes/lips to apply.'}
+              </p>
+
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <button
+                  onClick={() => onStartMakeupBrush?.('kajal')}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 hover:bg-purple-950/80 border border-purple-500/50 hover:border-purple-400 text-slate-200 transition-all active:scale-95 group text-left shadow"
+                >
+                  <Eye className="w-4 h-4 text-purple-400 shrink-0 group-hover:scale-110 transition-transform" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-extrabold text-purple-300">{language === 'bn' ? 'কাজল পেন্সিল' : 'Kajal Pencil'}</span>
+                    <span className="text-[9px] text-slate-400">{language === 'bn' ? 'চোখের নিচে আঁকুন' : 'Paint eye contour'}</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => onStartMakeupBrush?.('lips')}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 hover:bg-rose-950/80 border border-rose-500/50 hover:border-rose-400 text-slate-200 transition-all active:scale-95 group text-left shadow"
+                >
+                  <Smile className="w-4 h-4 text-rose-400 shrink-0 group-hover:scale-110 transition-transform" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-extrabold text-rose-300">{language === 'bn' ? 'ঠোঁট ব্রাশ (Lipstick)' : 'Lipstick Brush'}</span>
+                    <span className="text-[9px] text-slate-400">{language === 'bn' ? 'ঠোঁটে গোলাপি মেখে দিন' : 'Paint rosy lip tint'}</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => onStartMakeupBrush?.('eyebrow')}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 hover:bg-sky-950/80 border border-sky-500/50 hover:border-sky-400 text-slate-200 transition-all active:scale-95 group text-left shadow"
+                >
+                  <Eye className="w-4 h-4 text-sky-400 shrink-0 group-hover:scale-110 transition-transform" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-extrabold text-sky-300">{language === 'bn' ? 'ভ্রু পেন্সিল' : 'Eyebrow Pencil'}</span>
+                    <span className="text-[9px] text-slate-400">{language === 'bn' ? 'ভ্রু গাড় করুন' : 'Darken eyebrows'}</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => onStartMakeupBrush?.('blush')}
+                  className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 hover:bg-pink-950/80 border border-pink-500/50 hover:border-pink-400 text-slate-200 transition-all active:scale-95 group text-left shadow"
+                >
+                  <Sparkles className="w-4 h-4 text-pink-400 shrink-0 group-hover:scale-110 transition-transform" />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-extrabold text-pink-300">{language === 'bn' ? 'গালে ব্লাশ' : 'Cheek Blush'}</span>
+                    <span className="text-[9px] text-slate-400">{language === 'bn' ? 'গালে গোলাপি আভা' : 'Cheek rosy blush'}</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {/* Lip Rosy Pink Tint */}
+              <div className="space-y-1 bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div className="flex justify-between text-slate-300 text-[10px] font-bold">
+                  <span className="flex items-center gap-1.5 text-rose-400">
+                    <Smile className="w-3.5 h-3.5" />
+                    {language === 'bn' ? 'ঠোঁটে গোলাপি ভাব (Lip Tint)' : 'Lip Rosy Pink Tint'}
+                  </span>
+                  <span className="font-mono text-rose-400 font-bold">{props.lipRosyPink || 0}%</span>
+                </div>
+                <input type="range" min="0" max="100" value={props.lipRosyPink || 0} onChange={(e) => onChange('lipRosyPink', parseInt(e.target.value))} className="w-full accent-rose-500 h-1 bg-slate-800 rounded-lg cursor-pointer" />
+              </div>
+
+              {/* Under-Eye Kajal & Eyeliner */}
+              <div className="space-y-1 bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div className="flex justify-between text-slate-300 text-[10px] font-bold">
+                  <span className="flex items-center gap-1.5 text-purple-400">
+                    <Eye className="w-3.5 h-3.5" />
+                    {language === 'bn' ? 'চোখের নিচে কাজল (Kajal & Eyeliner)' : 'Under-Eye Kajal & Eyeliner'}
+                  </span>
+                  <span className="font-mono text-purple-400 font-bold">{props.underEyeKajal || 0}%</span>
+                </div>
+                <input type="range" min="0" max="100" value={props.underEyeKajal || 0} onChange={(e) => onChange('underEyeKajal', parseInt(e.target.value))} className="w-full accent-purple-500 h-1 bg-slate-800 rounded-lg cursor-pointer" />
+              </div>
+
+              {/* Eyebrows */}
+              <div className="space-y-1 bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div className="flex justify-between text-slate-300 text-[10px] font-bold">
+                  <span className="flex items-center gap-1.5 text-sky-400">
+                    <Eye className="w-3.5 h-3.5" />
+                    {language === 'bn' ? 'ভ্রু গাড় করা (Eyebrow Darkening)' : 'Eyebrow Definition'}
+                  </span>
+                  <span className="font-mono text-sky-400 font-bold">{props.eyebrowEnhance || 0}%</span>
+                </div>
+                <input type="range" min="0" max="100" value={props.eyebrowEnhance || 0} onChange={(e) => onChange('eyebrowEnhance', parseInt(e.target.value))} className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg cursor-pointer" />
+              </div>
+
+              {/* Cheek Blush */}
+              <div className="space-y-1 bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                <div className="flex justify-between text-slate-300 text-[10px] font-bold">
+                  <span className="flex items-center gap-1.5 text-pink-400">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {language === 'bn' ? 'গালে গোলাপি আভা (Cheek Blush)' : 'Cheek Rosy Blush'}
+                  </span>
+                  <span className="font-mono text-pink-400 font-bold">{props.blushRosy || 0}%</span>
+                </div>
+                <input type="range" min="0" max="100" value={props.blushRosy || 0} onChange={(e) => onChange('blushRosy', parseInt(e.target.value))} className="w-full accent-pink-500 h-1 bg-slate-800 rounded-lg cursor-pointer" />
+              </div>
+
               <div className="space-y-1">
                 <div className="flex justify-between text-slate-400 text-[10px]"><span>Light Skin Smoothing</span><span className="font-mono text-pink-400 font-bold">{props.skinSmoothing || 0}%</span></div>
                 <input type="range" min="0" max="100" value={props.skinSmoothing || 0} onChange={(e) => onChange('skinSmoothing', parseInt(e.target.value))} className="w-full accent-pink-500 h-1 bg-slate-800 rounded-lg cursor-pointer" />

@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import { projectService } from '../services/projectService';
+import { dbService } from '../services/dbService';
 
 export interface MediaItem {
   id: string;
@@ -35,8 +36,8 @@ interface ProjectStoreState {
   setCurrentProjectId: (id: string | number | null) => void;
   addMediaItems: (files: FileList | File[]) => Promise<void>;
   selectMediaItem: (id: string) => void;
-  removeMediaItem: (id: string) => void;
-  clearMediaBin: () => void;
+  removeMediaItem: (id: string) => Promise<void>;
+  clearMediaBin: () => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectStoreState>((set, get) => ({
@@ -59,15 +60,10 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       projectService.setActiveProjectId(projectId);
     }
 
-    // Load local media bin backup
-    const savedMediaBinStr = localStorage.getItem(`printhub_mediabin_${projectId}`);
-    let savedMediaBin: MediaItem[] = [];
-    if (savedMediaBinStr) {
-      try {
-        savedMediaBin = JSON.parse(savedMediaBinStr);
-      } catch (e) {
-        console.warn('Failed to load media bin from storage');
-      }
+    // Load persistent media bin from IndexedDB (with auto-migration from legacy localStorage)
+    let savedMediaBin: MediaItem[] = await dbService.getProjectMediaItems(projectId);
+    if (!savedMediaBin || savedMediaBin.length === 0) {
+      savedMediaBin = await dbService.migrateFromLocalStorage(projectId);
     }
 
     // Load local canvas backup
@@ -91,14 +87,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     if (payload) {
       projectService.setActiveProjectId(id);
 
-      const savedMediaBinStr = localStorage.getItem(`printhub_mediabin_${id}`);
-      let savedMediaBin: MediaItem[] = [];
-      if (savedMediaBinStr) {
-        try {
-          savedMediaBin = JSON.parse(savedMediaBinStr);
-        } catch (e) {
-          console.warn('Failed to load media bin from storage');
-        }
+      let savedMediaBin: MediaItem[] = await dbService.getProjectMediaItems(id);
+      if (!savedMediaBin || savedMediaBin.length === 0) {
+        savedMediaBin = await dbService.migrateFromLocalStorage(id);
       }
 
       set({
@@ -116,16 +107,13 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   },
 
   triggerAutoSave: async (canvasJson: string, thumbnailData?: string) => {
-    const { currentProjectId, mediaBin } = get();
+    const { currentProjectId } = get();
     if (!currentProjectId) return;
 
     set({ isAutoSaving: true });
     
     // Save canvas & thumbnail
     await projectService.autoSaveProject(currentProjectId, canvasJson, thumbnailData);
-    
-    // Save media bin to local storage
-    localStorage.setItem(`printhub_mediabin_${currentProjectId}`, JSON.stringify(mediaBin));
     
     set({
       isAutoSaving: false,
@@ -170,8 +158,8 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     const updatedBin = [...mediaBin, ...newItems];
     const activeId = newItems.length > 0 ? newItems[0].id : get().activeMediaId;
 
-    if (currentProjectId) {
-      localStorage.setItem(`printhub_mediabin_${currentProjectId}`, JSON.stringify(updatedBin));
+    if (currentProjectId && newItems.length > 0) {
+      await dbService.saveMediaItems(currentProjectId, newItems);
     }
 
     set({
@@ -184,14 +172,12 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     set({ activeMediaId: id });
   },
 
-  removeMediaItem: (id: string) => {
-    const { currentProjectId, mediaBin, activeMediaId } = get();
+  removeMediaItem: async (id: string) => {
+    const { mediaBin, activeMediaId } = get();
     const updated = mediaBin.filter((m) => m.id !== id);
     const nextActive = activeMediaId === id ? (updated.length > 0 ? updated[0].id : null) : activeMediaId;
 
-    if (currentProjectId) {
-      localStorage.setItem(`printhub_mediabin_${currentProjectId}`, JSON.stringify(updated));
-    }
+    await dbService.deleteMediaItem(id);
 
     set({
       mediaBin: updated,
@@ -199,11 +185,12 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     });
   },
 
-  clearMediaBin: () => {
+  clearMediaBin: async () => {
     const { currentProjectId } = get();
     if (currentProjectId) {
-      localStorage.removeItem(`printhub_mediabin_${currentProjectId}`);
+      await dbService.clearProjectMediaBin(currentProjectId);
     }
     set({ mediaBin: [], activeMediaId: null });
   },
 }));
+

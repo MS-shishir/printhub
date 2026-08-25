@@ -201,13 +201,13 @@ export default function InteractiveCropOverlay({
       {/* Render Backdrop & Handles ONLY after user draws a valid box */}
       {hasValidBox && (
         <>
-          {/* 4 Dark Translucent Backdrop Dimming Regions */}
-          <div style={{ height: `${cropBox.top}px` }} className="absolute top-0 left-0 right-0 bg-slate-950/70 backdrop-blur-[1px] pointer-events-none" />
-          <div style={{ top: `${cropBox.top + cropBox.height}px` }} className="absolute bottom-0 left-0 right-0 bg-slate-950/70 backdrop-blur-[1px] pointer-events-none" />
-          <div style={{ top: `${cropBox.top}px`, height: `${cropBox.height}px`, width: `${cropBox.left}px` }} className="absolute left-0 bg-slate-950/70 backdrop-blur-[1px] pointer-events-none" />
-          <div style={{ top: `${cropBox.top}px`, height: `${cropBox.height}px`, left: `${cropBox.left + cropBox.width}px` }} className="absolute right-0 bg-slate-950/70 backdrop-blur-[1px] pointer-events-none" />
+          {/* 4 Dark Translucent Backdrop Dimming Regions (Photoshop Scrim) */}
+          <div style={{ height: `${cropBox.top}px` }} className="absolute top-0 left-0 right-0 bg-black/65 backdrop-blur-[0.5px] pointer-events-none" />
+          <div style={{ top: `${cropBox.top + cropBox.height}px` }} className="absolute bottom-0 left-0 right-0 bg-black/65 backdrop-blur-[0.5px] pointer-events-none" />
+          <div style={{ top: `${cropBox.top}px`, height: `${cropBox.height}px`, width: `${cropBox.left}px` }} className="absolute left-0 bg-black/65 backdrop-blur-[0.5px] pointer-events-none" />
+          <div style={{ top: `${cropBox.top}px`, height: `${cropBox.height}px`, left: `${cropBox.left + cropBox.width}px` }} className="absolute right-0 bg-black/65 backdrop-blur-[0.5px] pointer-events-none" />
 
-          {/* Main Rubberband Selection Rectangle */}
+          {/* Main Selection Rectangle (100% Clear View inside, crisp 1px border) */}
           <div
             onMouseDown={(e) => handleHandleMouseDown(e, 'move')}
             style={{
@@ -216,72 +216,77 @@ export default function InteractiveCropOverlay({
               width: `${cropBox.width}px`,
               height: `${cropBox.height}px`,
             }}
-            className="absolute border-2 border-indigo-400 bg-indigo-500/10 cursor-move shadow-[0_0_0_1px_rgba(255,255,255,0.4)] group"
+            className="absolute border border-white/90 bg-transparent cursor-move shadow-[0_0_0_1px_rgba(0,0,0,0.6)] group"
           >
+            {/* Live Dimension Badge at top center */}
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-2.5 py-0.5 bg-slate-950/90 backdrop-blur-md rounded-md text-[10px] font-mono font-bold text-indigo-300 border border-slate-700/80 shadow-md whitespace-nowrap pointer-events-none">
+              {Math.round(cropBox.width)} × {Math.round(cropBox.height)} px
+            </div>
+
             {/* Rule of Thirds 3x3 Grid Overlay */}
             <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3">
-              <div className="border-r border-b border-white/20" />
-              <div className="border-r border-b border-white/20" />
-              <div className="border-b border-white/20" />
-              <div className="border-r border-b border-white/20" />
-              <div className="border-r border-b border-white/20" />
-              <div className="border-b border-white/20" />
-              <div className="border-r border-white/20" />
-              <div className="border-r border-white/20" />
+              <div className="border-r border-b border-white/30" />
+              <div className="border-r border-b border-white/30" />
+              <div className="border-b border-white/30" />
+              <div className="border-r border-b border-white/30" />
+              <div className="border-r border-b border-white/30" />
+              <div className="border-b border-white/30" />
+              <div className="border-r border-white/30" />
+              <div className="border-r border-white/30" />
               <div className="" />
             </div>
 
-            {/* 4 Corner L-Shaped Drag Handles */}
+            {/* 4 Photoshop-Style Corner L-Brackets */}
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'top-left')}
-              className="crop-handle absolute -top-1.5 -left-1.5 w-4 h-4 border-t-3 border-l-3 border-white bg-indigo-600 shadow-md cursor-nwse-resize z-40 rounded-tl-sm hover:scale-125 transition-transform" 
+              className="crop-handle absolute -top-1 -left-1 w-4 h-4 border-t-[3px] border-l-[3px] border-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] cursor-nwse-resize z-40 hover:scale-125 transition-transform" 
             />
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'top-right')}
-              className="crop-handle absolute -top-1.5 -right-1.5 w-4 h-4 border-t-3 border-r-3 border-white bg-indigo-600 shadow-md cursor-nesw-resize z-40 rounded-tr-sm hover:scale-125 transition-transform" 
+              className="crop-handle absolute -top-1 -right-1 w-4 h-4 border-t-[3px] border-r-[3px] border-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] cursor-nesw-resize z-40 hover:scale-125 transition-transform" 
             />
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'bottom-left')}
-              className="crop-handle absolute -bottom-1.5 -left-1.5 w-4 h-4 border-b-3 border-l-3 border-white bg-indigo-600 shadow-md cursor-nesw-resize z-40 rounded-bl-sm hover:scale-125 transition-transform" 
+              className="crop-handle absolute -bottom-1 -left-1 w-4 h-4 border-b-[3px] border-l-[3px] border-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] cursor-nesw-resize z-40 hover:scale-125 transition-transform" 
             />
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'bottom-right')}
-              className="crop-handle absolute -bottom-1.5 -right-1.5 w-4 h-4 border-b-3 border-r-3 border-white bg-indigo-600 shadow-md cursor-nwse-resize z-40 rounded-br-sm hover:scale-125 transition-transform" 
+              className="crop-handle absolute -bottom-1 -right-1 w-4 h-4 border-b-[3px] border-r-[3px] border-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] cursor-nwse-resize z-40 hover:scale-125 transition-transform" 
             />
 
-            {/* 4 Edge Midpoint Handles */}
+            {/* 4 Edge Midpoint Bars */}
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'top')}
-              className="crop-handle absolute -top-1 left-1/2 -translate-x-1/2 w-7 h-2 bg-white border border-indigo-600 rounded-full shadow cursor-ns-resize z-40 hover:scale-125 transition-transform" 
+              className="crop-handle absolute -top-1.5 left-1/2 -translate-x-1/2 w-6 h-1.5 bg-white border border-slate-900/80 rounded-sm shadow-md cursor-ns-resize z-40 hover:scale-125 transition-transform" 
             />
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'bottom')}
-              className="crop-handle absolute -bottom-1 left-1/2 -translate-x-1/2 w-7 h-2 bg-white border border-indigo-600 rounded-full shadow cursor-ns-resize z-40 hover:scale-125 transition-transform" 
+              className="crop-handle absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-6 h-1.5 bg-white border border-slate-900/80 rounded-sm shadow-md cursor-ns-resize z-40 hover:scale-125 transition-transform" 
             />
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'left')}
-              className="crop-handle absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-7 bg-white border border-indigo-600 rounded-full shadow cursor-ew-resize z-40 hover:scale-125 transition-transform" 
+              className="crop-handle absolute -left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white border border-slate-900/80 rounded-sm shadow-md cursor-ew-resize z-40 hover:scale-125 transition-transform" 
             />
             <div 
               onMouseDown={(e) => handleHandleMouseDown(e, 'right')}
-              className="crop-handle absolute -right-1 top-1/2 -translate-y-1/2 w-2 h-7 bg-white border border-indigo-600 rounded-full shadow cursor-ew-resize z-40 hover:scale-125 transition-transform" 
+              className="crop-handle absolute -right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white border border-slate-900/80 rounded-sm shadow-md cursor-ew-resize z-40 hover:scale-125 transition-transform" 
             />
 
             {/* Floating Action Bar Overlaid Below Crop Rectangle */}
-            <div className="crop-action-bar absolute -bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-900/95 backdrop-blur-xl px-3.5 py-1.5 rounded-full border border-indigo-500/40 shadow-2xl z-50 whitespace-nowrap">
+            <div className="crop-action-bar absolute -bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-950/95 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-800 shadow-2xl z-50 whitespace-nowrap">
               <button 
                 onClick={onApplyCrop}
-                className="flex items-center gap-1 px-3.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-extrabold rounded-lg text-xs transition-all shadow-md"
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-indigo-900/40 hover:scale-105 active:scale-95 cursor-pointer"
               >
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>{language === 'bn' ? 'প্রয়োগ করুন' : 'Apply Crop'}</span>
               </button>
 
               <button 
                 onClick={onCancelCrop}
-                className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs transition-all"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-all hover:text-white cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>{language === 'bn' ? 'বাতিল' : 'Cancel'}</span>
               </button>
             </div>

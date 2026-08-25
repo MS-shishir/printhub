@@ -28,8 +28,8 @@ async function initDetector(): Promise<void> {
       
       const detector = new mp.FaceDetection({
         locateFile: (file: string) => {
-          // Load WASM files from node_modules (works offline)
-          return `/node_modules/@mediapipe/face_detection/${file}`;
+          // Serve WASM & model assets from public directory (works in dev and production builds)
+          return `/mediapipe/face_detection/${file}`;
         },
       });
 
