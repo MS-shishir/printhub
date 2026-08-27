@@ -142,7 +142,7 @@ export async function exportPDF(
   }
 
   const pdfBytes = await pdfDoc.save();
-  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   triggerDownload(url, `passport_${template.id}_${itemsToExport.length}copies.pdf`);
   setTimeout(() => URL.revokeObjectURL(url), 5000);

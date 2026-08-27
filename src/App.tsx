@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   Camera, Palette, Printer, Keyboard, Maximize2, Minimize2, Languages,
-  Download, FileDown
+  Download, FileDown, FileText
 } from 'lucide-react';
 import { RecentFile, AppLanguage } from './types';
 
@@ -13,6 +13,7 @@ import ContextMenu from './components/ContextMenu';
 // Lazy loaded heavy studio submodules
 const PassportStudio = lazy(() => import('./passport-studio/components/PassportStudio'));
 const PhotoWorkspace = lazy(() => import('./components/PhotoWorkspace'));
+const DocumentWorkspace = lazy(() => import('./components/document/DocumentWorkspace'));
 
 const WorkstationLoader = () => (
   <div className="flex flex-col items-center justify-center min-h-[450px] h-full gap-3 text-slate-400 bg-slate-950 select-none">
@@ -26,7 +27,8 @@ const WorkstationLoader = () => (
   </div>
 );
 
-type StudioModule = 'passport' | 'photo';
+type StudioModule = 'passport' | 'photo' | 'document';
+
 
 export default function App() {
   // Session starts fresh on page reload (or restores active tab)
@@ -120,9 +122,10 @@ export default function App() {
         e.preventDefault();
         toggleFullscreen();
       }
-      // Quick Module Hotkeys (1: Passport, 2: Photo)
+      // Quick Module Hotkeys (1: Passport, 2: Photo, 3: Document)
       if (e.altKey && e.key === '1') handleSwitchModule('passport');
       if (e.altKey && e.key === '2') handleSwitchModule('photo');
+      if (e.altKey && e.key === '3') handleSwitchModule('document');
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -170,7 +173,7 @@ export default function App() {
           <div className="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800">
             <button
               onClick={() => handleSwitchModule('passport')}
-              className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 activeModule === 'passport'
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -182,7 +185,7 @@ export default function App() {
 
             <button
               onClick={() => handleSwitchModule('photo')}
-              className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 activeModule === 'photo'
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -190,6 +193,18 @@ export default function App() {
             >
               <Palette className="w-3.5 h-3.5" />
               <span>{language === 'bn' ? 'ফটো ল্যাব এডিটর' : 'Photo Lab Editor'}</span>
+            </button>
+
+            <button
+              onClick={() => handleSwitchModule('document')}
+              className={`flex items-center gap-2 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                activeModule === 'document'
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{language === 'bn' ? 'ডকুমেন্ট স্ক্যানার' : 'Doc Scanner Studio'}</span>
             </button>
           </div>
         </div>
@@ -247,7 +262,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Main Studio Workstation Viewport (Both Mounted & State-Preserved) ── */}
+      {/* ── Main Studio Workstation Viewport (All Mounted & State-Preserved) ── */}
       <main className="flex-1 flex overflow-hidden relative bg-slate-950">
         <Suspense fallback={<WorkstationLoader />}>
           {/* Passport Studio Container (Always Alive in DOM) */}
@@ -265,8 +280,17 @@ export default function App() {
               language={language}
             />
           </div>
+
+          {/* Document Scanner Workspace Container (Always Alive in DOM) */}
+          <div className={activeModule === 'document' ? 'w-full h-full' : 'hidden'}>
+            <DocumentWorkspace
+              onAddRecentFile={handleAddRecentFile}
+              language={language}
+            />
+          </div>
         </Suspense>
       </main>
+
 
       {/* ── Global Floating Context Overlays & Modals ──────────────────────── */}
       <ShortcutKeysModal

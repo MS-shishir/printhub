@@ -182,6 +182,48 @@ runTest('HistoryEngine: New action invalidates redo stack', () => {
   assert.equal(history.canRedo(), false);
 });
 
+// ── 4. Document Engine & Homography Tests ─────────────────────────────────
+console.log('\n▶ [4] Document Perspective Warp & BD Sizing Engine');
+
+import { PerspectiveWarpEngine, DocumentQuad } from '../engines/PerspectiveWarpEngine';
+
+runTest('PerspectiveWarpEngine: Identity Homography Matrix for congruent quads', () => {
+  const quad: DocumentQuad = {
+    tl: { x: 0, y: 0 },
+    tr: { x: 100, y: 0 },
+    br: { x: 100, y: 100 },
+    bl: { x: 0, y: 100 },
+  };
+
+  const H = PerspectiveWarpEngine.getPerspectiveTransform(quad, quad);
+  assert.equal(H.length, 9);
+  assert.ok(Math.abs(H[0] - 1) < 1e-4, 'H[0] should be 1');
+  assert.ok(Math.abs(H[4] - 1) < 1e-4, 'H[4] should be 1');
+  assert.ok(Math.abs(H[8] - 1) < 1e-4, 'H[8] should be 1');
+});
+
+runTest('PerspectiveWarpEngine: Invert Matrix 3x3 successfully', () => {
+  const matrix = [
+    2, 0, 0,
+    0, 2, 0,
+    0, 0, 1
+  ];
+
+  const inv = PerspectiveWarpEngine.invertMatrix3x3(matrix);
+  assert.ok(inv !== null);
+  assert.ok(Math.abs(inv![0] - 0.5) < 1e-4);
+  assert.ok(Math.abs(inv![4] - 0.5) < 1e-4);
+  assert.ok(Math.abs(inv![8] - 1.0) < 1e-4);
+});
+
+runTest('Document Specs: Smart NID 85.6x53.98mm converts accurately at 300 DPI', () => {
+  const nidWPx = mmToPx(85.6, 300);
+  const nidHPx = mmToPx(53.98, 300);
+
+  assert.equal(Math.round(nidWPx), 1011);
+  assert.equal(Math.round(nidHPx), 638);
+});
+
 // ── Test Summary ─────────────────────────────────────────────────────────
 console.log('\n======================================================');
 console.log(` TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
@@ -190,3 +232,4 @@ console.log('======================================================\n');
 if (failed > 0) {
   process.exit(1);
 }
+

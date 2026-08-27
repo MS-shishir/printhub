@@ -10,12 +10,16 @@ import { Sliders, Layers } from 'lucide-react';
 import * as fabric from 'fabric';
 import { removeBackgroundAI } from '../passport-studio/services/image-processing.service';
 import { ImageEngine, CropEngine, ExportEngine, PrintEngine, HistoryEngine, LayerEngine, LocalAdjustmentEngine, LocalAdjustmentStackItem, LocalAdjustmentValues, AiRegionType, DEFAULT_LOCAL_ADJUSTMENTS } from '../engines';
+import { PerspectiveWarpEngine, DocumentQuad } from '../engines/PerspectiveWarpEngine';
 import { useProjectStore } from '../store/useProjectStore';
+
 
 import PhotoToolbar from './photo/PhotoToolbar';
 import PhotoToolsPalette, { ToolType } from './photo/PhotoToolsPalette';
 import PhotoCanvas from './photo/PhotoCanvas';
+import { CropMode } from './photo/PhotoCropOverlay';
 import FloatingCanvasDock from './photo/FloatingCanvasDock';
+
 import LayersPanel, { PhotoLayerItem } from './photo/LayersPanel';
 import ColorAdjustPanel, { ImageFilterProps } from './photo/ColorAdjustPanel';
 import ExportModal from './photo/ExportModal';
@@ -75,13 +79,16 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     }
   };
 
+  // Layer Management System State
   const [layers, setLayers] = useState<PhotoLayerItem[]>([]);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
 
+  // Dual-Mode Crop State (Normal Rectangular Crop & 4-Corner Perspective Warp)
   const [isCropActive, setIsCropActive] = useState<boolean>(false);
-  const [cropBox, setCropBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [cropMode, setCropMode] = useState<CropMode>('normal');
 
   // Shoulder Level Alignment Guide State
+
   const [showShoulderRuler, setShowShoulderRuler] = useState<boolean>(false);
   const [currentRotationAngle, setCurrentRotationAngle] = useState<number>(0);
 
@@ -405,7 +412,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     }
   };
 
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (!fabricCanvasRef.current || !historyEngineRef.current.canUndo()) return;
 
     const prevSnapshot = historyEngineRef.current.undo();
@@ -421,7 +428,8 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
 
     if (prevSnapshot.photoName) setPhotoName(prevSnapshot.photoName);
 
-    fabricCanvasRef.current.loadFromJSON(prevSnapshot.canvasJson, () => {
+    try {
+      await fabricCanvasRef.current.loadFromJSON(prevSnapshot.canvasJson);
       const objects = fabricCanvasRef.current?.getObjects() || [];
       objects.forEach((obj: any) => {
         if (obj.type === 'image' && !obj._rawSourceElement && obj.getElement()) {
@@ -432,14 +440,16 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       applyFabricFilters(prevSnapshot.filterProps);
       fabricCanvasRef.current?.renderAll();
       syncLayers();
-
+    } catch (err) {
+      console.error('Error during Undo:', err);
+    } finally {
       isUndoRedoActionRef.current = false;
       setCanUndo(historyEngineRef.current.canUndo());
       setCanRedo(historyEngineRef.current.canRedo());
-    });
+    }
   };
 
-  const handleRedo = () => {
+  const handleRedo = async () => {
     if (!fabricCanvasRef.current || !historyEngineRef.current.canRedo()) return;
 
     const nextSnapshot = historyEngineRef.current.redo();
@@ -455,7 +465,8 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
 
     if (nextSnapshot.photoName) setPhotoName(nextSnapshot.photoName);
 
-    fabricCanvasRef.current.loadFromJSON(nextSnapshot.canvasJson, () => {
+    try {
+      await fabricCanvasRef.current.loadFromJSON(nextSnapshot.canvasJson);
       const objects = fabricCanvasRef.current?.getObjects() || [];
       objects.forEach((obj: any) => {
         if (obj.type === 'image' && !obj._rawSourceElement && obj.getElement()) {
@@ -466,12 +477,15 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       applyFabricFilters(nextSnapshot.filterProps);
       fabricCanvasRef.current?.renderAll();
       syncLayers();
-
+    } catch (err) {
+      console.error('Error during Redo:', err);
+    } finally {
       isUndoRedoActionRef.current = false;
       setCanUndo(historyEngineRef.current.canUndo());
       setCanRedo(historyEngineRef.current.canRedo());
-    });
+    }
   };
+
 
   const handleFilterChange = (key: keyof ImageFilterProps, value: any) => {
     setFilterProps((prev) => {
@@ -1025,9 +1039,16 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       if (tool === 'clone') handleDuplicateActiveObject();
       else if (tool === 'crop') {
         if (localAdjustmentsMode === 'local') setLocalAdjustmentsMode('global');
+        setCropMode('normal');
+        setIsCropActive(true);
+      }
+      else if (tool === 'warp_crop') {
+        if (localAdjustmentsMode === 'local') setLocalAdjustmentsMode('global');
+        setCropMode('perspective');
         setIsCropActive(true);
       }
       else if (tool === 'ruler') setShowShoulderRuler((prev) => !prev);
+
       else if (tool === 'ai_bg' || tool === 'magic_remove') handleRemoveBg();
       else if (tool === 'pipette') showToast('Eyedropper Color Picker: Click any canvas element to sample color', 'info');
       else if (tool === 'blur') handleFilterChange('blur', Math.min(100, (filterProps.blur || 0) + 10));
@@ -1094,16 +1115,13 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     fabricCanvasRef.current.renderAll();
   };
 
-  const handleToggleCrop = () => {
-    setIsCropActive(true);
-  };
-
   const handleFlipHorizontal = () => {
     if (!fabricCanvasRef.current) return;
     const active = fabricCanvasRef.current.getActiveObject();
     if (active) {
       active.set('flipX', !active.flipX);
       fabricCanvasRef.current.renderAll();
+      saveCanvasHistory(true);
     }
   };
 
@@ -1113,110 +1131,59 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     if (active) {
       active.set('flipY', !active.flipY);
       fabricCanvasRef.current.renderAll();
+      saveCanvasHistory(true);
     }
   };
 
-  const handleApplyCrop = async () => {
-    if (!fabricCanvasRef.current || !cropBox) {
+  const handleApplyCropResult = (resultCanvas: HTMLCanvasElement) => {
+    if (!fabricCanvasRef.current) {
       setIsCropActive(false);
-      setCropBox(null);
       return;
     }
 
-    const fabricCanvas = fabricCanvasRef.current;
-    let activeObj = fabricCanvas.getActiveObject();
+    const dataUrl = resultCanvas.toDataURL('image/png', 1.0);
+    const imgObj = new Image();
+    imgObj.onload = () => {
+      if (!fabricCanvasRef.current) return;
+      const fabricImage = new fabric.Image(imgObj);
+      (fabricImage as any)._rawSourceElement = resultCanvas;
+      (fabricImage as any).id = `crop-${Date.now()}`;
+      (fabricImage as any).name = cropMode === 'normal' ? 'Cropped Photo' : '4-Corner Warped Photo';
 
-    let img: fabric.Image | null = null;
-    if (activeObj && activeObj.isType('image')) {
-      img = activeObj as fabric.Image;
-    } else if (activeObj && activeObj.isType('group')) {
-      const groupDataUrl = (activeObj as fabric.Group).toDataURL({ format: 'png', multiplier: 2 });
-      const groupImg = await fabric.Image.fromURL(groupDataUrl);
-      groupImg.set({
-        left: activeObj.left,
-        top: activeObj.top,
-      });
-      groupImg.scaleToWidth(activeObj.getScaledWidth());
-      fabricCanvas.remove(activeObj);
-      fabricCanvas.add(groupImg);
-      fabricCanvas.setActiveObject(groupImg);
-      img = groupImg;
-    } else {
-      img = (fabricCanvas.getObjects().find((o) => o.isType('image')) as fabric.Image) || null;
-    }
-
-    if (img && img.isType('image')) {
-      const imgEl = (img as any)._element || img.getElement();
-
-      if (imgEl && (imgEl instanceof HTMLImageElement || imgEl instanceof HTMLCanvasElement)) {
-        const naturalWidth = (imgEl as HTMLImageElement).naturalWidth || imgEl.width || 2000;
-        const naturalHeight = (imgEl as HTMLImageElement).naturalHeight || imgEl.height || 1500;
-
-        const vpt = fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0];
-        const zoom = fabricCanvas.getZoom() || 1;
-
-        // Convert container cropBox to Canvas Local Coordinate Space
-        const canvasCropLeft = (cropBox.left - vpt[4]) / zoom;
-        const canvasCropTop = (cropBox.top - vpt[5]) / zoom;
-        const canvasCropWidth = cropBox.width / zoom;
-        const canvasCropHeight = cropBox.height / zoom;
-
-        // Image position and scaled dimensions on canvas
-        const imgLeft = img.left || 0;
-        const imgTop = img.top || 0;
-        const imgScaledW = img.getScaledWidth() || 1;
-        const imgScaledH = img.getScaledHeight() || 1;
-
-        // Relative percentage within image bounding rect
-        const relX = (canvasCropLeft - imgLeft) / imgScaledW;
-        const relY = (canvasCropTop - imgTop) / imgScaledH;
-        const relW = canvasCropWidth / imgScaledW;
-        const relH = canvasCropHeight / imgScaledH;
-
-        // Map to 100% Original Uncompressed Natural Pixel Coordinates
-        const cropPixelX = Math.max(0, Math.min(naturalWidth - 10, Math.round(relX * naturalWidth)));
-        const cropPixelY = Math.max(0, Math.min(naturalHeight - 10, Math.round(relY * naturalHeight)));
-        const cropPixelW = Math.max(10, Math.min(naturalWidth - cropPixelX, Math.round(relW * naturalWidth)));
-        const cropPixelH = Math.max(10, Math.min(naturalHeight - cropPixelY, Math.round(relH * naturalHeight)));
-
-        // Sizing Offscreen HD Crop Canvas
-        const offscreen = document.createElement('canvas');
-        offscreen.width = cropPixelW;
-        offscreen.height = cropPixelH;
-        const ctx = offscreen.getContext('2d');
-
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(
-            imgEl,
-            cropPixelX, cropPixelY, cropPixelW, cropPixelH,
-            0, 0, cropPixelW, cropPixelH
-          );
-
-          const croppedDataUrl = offscreen.toDataURL('image/png', 1.0);
-          const croppedImg = await fabric.Image.fromURL(croppedDataUrl);
-
-          croppedImg.scaleToWidth(canvasCropWidth);
-          croppedImg.set({
-            left: canvasCropLeft,
-            top: canvasCropTop,
-          });
-
-          (croppedImg as any).id = (img as any).id || `cropped-${Date.now()}`;
-          (croppedImg as any).name = (img as any).name ? `${(img as any).name} (Cropped)` : 'Cropped Photo Layer';
-
-          fabricCanvas.remove(img);
-          fabricCanvas.add(croppedImg);
-          fabricCanvas.setActiveObject(croppedImg);
-          fabricCanvas.renderAll();
-          syncLayers();
-        }
+      const cW = fabricCanvasRef.current.width || 800;
+      const cH = fabricCanvasRef.current.height || 600;
+      if (resultCanvas.width > cW * 0.85 || resultCanvas.height > cH * 0.85) {
+        fabricImage.scaleToWidth(cW * 0.85);
       }
-    }
 
-    setIsCropActive(false);
-    setCropBox(null);
+      const activeObj = fabricCanvasRef.current.getActiveObject();
+      if (activeObj) {
+        fabricCanvasRef.current.remove(activeObj);
+      } else {
+        const existing = fabricCanvasRef.current.getObjects().find(o => o.isType('image'));
+        if (existing) fabricCanvasRef.current.remove(existing);
+      }
+
+      fabricCanvasRef.current.add(fabricImage);
+      fabricCanvasRef.current.centerObject(fabricImage);
+      fabricCanvasRef.current.setActiveObject(fabricImage);
+      fabricCanvasRef.current.renderAll();
+      syncLayers();
+      saveCanvasHistory(true);
+      setIsCropActive(false);
+      showToast(
+        cropMode === 'normal'
+          ? (language === 'bn' ? 'ক্রপ সফলভাবে সম্পন্ন হয়েছে!' : 'Photo Cropped Successfully!')
+          : (language === 'bn' ? '৪-কোণা পার্সপেক্টিভ ক্রপ সফলভাবে সম্পন্ন হয়েছে!' : '4-Corner Perspective Crop Applied!'),
+        'success'
+      );
+    };
+    imgObj.src = dataUrl;
+  };
+
+  const handleToggleCrop = () => {
+    setCropMode('normal');
+    setIsCropActive((prev) => !prev);
   };
 
   const handleZoomIn = () => {
@@ -1224,6 +1191,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     setZoomPercent(next);
     fabricCanvasRef.current?.setZoom(next / 100);
   };
+
 
   const handleZoomOut = () => {
     const next = Math.max(50, zoomPercent - 10);
@@ -1587,15 +1555,16 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
             showRulers={showRulers}
             showThirdsGuide={showThirdsGuide}
             isCropActive={isCropActive}
+            cropMode={cropMode}
+            onSetCropMode={setCropMode}
+            onApplyCropCanvas={handleApplyCropResult}
+            onCancelCrop={() => setIsCropActive(false)}
             isProcessing={isProcessing}
             showShoulderRuler={showShoulderRuler}
             currentRotationAngle={currentRotationAngle}
             onRotateAngle={handleRotateAngle}
             onCloseShoulderRuler={() => setShowShoulderRuler(false)}
-            cropBox={cropBox}
-            onCropBoxChange={setCropBox}
-            onApplyCrop={handleApplyCrop}
-            onCancelCrop={() => { setIsCropActive(false); setCropBox(null); }}
+
             isLocalPaintingActive={localAdjustmentsMode === 'local' && (activeTool === 'brush' || activeTool === 'eraser')}
             activeMaskCanvas={localStack.find((s) => s.id === activeLocalId)?.maskCanvas || null}
             localBrushSize={localBrushSize}
@@ -1603,6 +1572,7 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
             onMaskUpdated={() => setLocalStack([...localStack])}
             language={language}
           />
+
 
         </div>
 

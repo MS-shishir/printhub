@@ -14,3 +14,6 @@ export * from './ExportEngine';
 export * from './ClipboardEngine';
 export * from './ShortcutEngine';
 export * from './LocalAdjustmentEngine';
+export * from './PerspectiveWarpEngine';
+export * from './DocumentEnhanceEngine';
+

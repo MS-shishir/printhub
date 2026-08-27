@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import * as fabric from 'fabric';
 import { Loader2, Sparkles } from 'lucide-react';
-import InteractiveCropOverlay from './InteractiveCropOverlay';
+import PhotoCropOverlay, { CropMode } from './PhotoCropOverlay';
 import ShoulderRulerGuide from './ShoulderRulerGuide';
 import LocalMaskPaintingOverlay from './LocalMaskPaintingOverlay';
 
@@ -14,16 +14,16 @@ interface PhotoCanvasProps {
   showRulers: boolean;
   showThirdsGuide: boolean;
   isCropActive: boolean;
+  cropMode?: CropMode;
+  onSetCropMode?: (mode: CropMode) => void;
+  onApplyCropCanvas?: (resultCanvas: HTMLCanvasElement) => void;
+  onCancelCrop: () => void;
   isProcessing?: boolean;
   showShoulderRuler?: boolean;
   currentRotationAngle?: number;
   onRotateAngle?: (angle: number) => void;
   onCloseShoulderRuler?: () => void;
-  cropBox: { left: number; top: number; width: number; height: number } | null;
-  onCropBoxChange: (newBox: { left: number; top: number; width: number; height: number }) => void;
-  onApplyCrop: () => void;
-  onCancelCrop: () => void;
-
+  
   // Local Selective Adjustment Painting Overlay Props
   isLocalPaintingActive?: boolean;
   activeMaskCanvas?: HTMLCanvasElement | null;
@@ -44,15 +44,15 @@ export default function PhotoCanvas({
   showRulers,
   showThirdsGuide,
   isCropActive,
+  cropMode = 'normal',
+  onSetCropMode,
+  onApplyCropCanvas,
+  onCancelCrop,
   isProcessing = false,
   showShoulderRuler = false,
   currentRotationAngle = 0,
   onRotateAngle,
   onCloseShoulderRuler,
-  cropBox,
-  onCropBoxChange,
-  onApplyCrop,
-  onCancelCrop,
   isLocalPaintingActive = false,
   activeMaskCanvas = null,
   localBrushSize = 30,
@@ -111,13 +111,14 @@ export default function PhotoCanvas({
           </div>
         )}
 
-        {/* Photoshop Desktop Grade Interactive Drag-to-Select Crop Overlay */}
-        {isCropActive && (
-          <InteractiveCropOverlay
-            containerRef={containerRef}
-            cropBox={cropBox}
-            onCropBoxChange={onCropBoxChange}
-            onApplyCrop={onApplyCrop}
+        {/* Professional Dual-Mode Crop Overlay (Normal Rectangular & 4-Corner Perspective Warp) */}
+        {isCropActive && activeImage && (
+          <PhotoCropOverlay
+            fabricCanvas={fabricCanvas || null}
+            activeImage={activeImage}
+            cropMode={cropMode}
+            onSetCropMode={(m) => onSetCropMode && onSetCropMode(m)}
+            onApplyCrop={(res) => onApplyCropCanvas && onApplyCropCanvas(res)}
             onCancelCrop={onCancelCrop}
             language={language}
           />
@@ -134,7 +135,7 @@ export default function PhotoCanvas({
           />
         )}
 
-        {/* INLINE CANVAS LOADER (Covers ONLY the photo canvas box, NOT the full screen) */}
+        {/* INLINE CANVAS LOADER */}
         {isProcessing && (
           <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-md z-30 flex flex-col items-center justify-center p-4 text-center select-none animate-fade-in">
             <div className="relative w-12 h-12 flex items-center justify-center mb-3">

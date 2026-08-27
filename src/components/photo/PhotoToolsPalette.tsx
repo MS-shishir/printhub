@@ -5,13 +5,13 @@
  */
 
 import React, { useRef } from 'react';
-import {
-  Move, MousePointer, Crop as CropIcon, Brush, Eraser,
+import { 
+  Move, MousePointer, Crop as CropIcon, Scissors, Brush, Eraser, 
   Copy, Wand2, Sparkles, Pipette, Flame, Droplet, Sun, Contrast, ZoomIn, Hand, Upload, Ruler
 } from 'lucide-react';
 
 export type ToolType = 
-  | 'move' | 'select' | 'crop' | 'ruler' | 'brush' | 'eraser' 
+  | 'move' | 'select' | 'crop' | 'warp_crop' | 'ruler' | 'brush' | 'eraser' 
   | 'clone' | 'magic_remove' | 'ai_bg' | 'pipette' | 'blur' | 'sharpen' 
   | 'dodge' | 'burn' | 'zoom' | 'hand';
 
@@ -26,6 +26,7 @@ const TOOL_LIST: { id: ToolType; icon: any; nameEn: string; nameBn: string; hotk
   { id: 'move', icon: Move, nameEn: 'Move', nameBn: 'মুভ', hotkey: 'V' },
   { id: 'select', icon: MousePointer, nameEn: 'Select', nameBn: 'সিলেকশন', hotkey: 'M' },
   { id: 'crop', icon: CropIcon, nameEn: 'Crop', nameBn: 'ক্রপ', hotkey: 'C' },
+  { id: 'warp_crop', icon: Scissors, nameEn: '4-Corner', nameBn: '৪-কোণা', hotkey: 'K' },
   { id: 'ruler', icon: Ruler, nameEn: 'Ruler', nameBn: 'রুলার', hotkey: 'R' },
   { id: 'brush', icon: Brush, nameEn: 'Brush', nameBn: 'ব্রাশ', hotkey: 'B' },
   { id: 'eraser', icon: Eraser, nameEn: 'Eraser', nameBn: 'ইরেজার', hotkey: 'E' },
@@ -40,6 +41,7 @@ const TOOL_LIST: { id: ToolType; icon: any; nameEn: string; nameBn: string; hotk
   { id: 'zoom', icon: ZoomIn, nameEn: 'Zoom', nameBn: 'জুম', hotkey: 'Z' },
   { id: 'hand', icon: Hand, nameEn: 'Pan', nameBn: 'প্যান', hotkey: 'H' },
 ];
+
 
 export default function PhotoToolsPalette({ activeTool, onSelectTool, onImportImage, language }: PhotoToolsPaletteProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -51,7 +51,7 @@ export class ExportEngine {
       page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
 
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
       this.triggerDownload(blob, `${fileName}.pdf`);
       return;
     }
