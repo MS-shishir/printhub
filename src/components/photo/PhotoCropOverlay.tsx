@@ -102,23 +102,21 @@ export default function PhotoCropOverlay({
     if (ctx) ctx.drawImage(rawEl, 0, 0);
     rawCanvasRef.current = rawCanvas;
 
-    // Convert Image Bounds on Fabric Canvas to Display Coordinates
+    // Convert True Image Bounds on Fabric Canvas to Display Coordinates
     const vpt = fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0];
     const zoom = fabricCanvas.getZoom() || 1;
 
-    const imgLeft = activeImage.left || 0;
-    const imgTop = activeImage.top || 0;
-    const imgW = activeImage.getScaledWidth() || 400;
-    const imgH = activeImage.getScaledHeight() || 400;
+    // Using true getBoundingRect() perfectly accounts for originX/originY (center or left)
+    const bRect = activeImage.getBoundingRect();
 
-    const dispLeft = imgLeft * zoom + vpt[4];
-    const dispTop = imgTop * zoom + vpt[5];
-    const dispW = imgW * zoom;
-    const dispH = imgH * zoom;
+    const dispLeft = bRect.left * zoom + vpt[4];
+    const dispTop = bRect.top * zoom + vpt[5];
+    const dispW = bRect.width * zoom;
+    const dispH = bRect.height * zoom;
 
-    // Centered crop box with 10% margin
-    const padW = dispW * 0.10;
-    const padH = dispH * 0.10;
+    // Centered crop box with 6% margin
+    const padW = dispW * 0.06;
+    const padH = dispH * 0.06;
     const cLeft = Math.round(dispLeft + padW);
     const cTop = Math.round(dispTop + padH);
     const cW = Math.round(dispW - 2 * padW);
@@ -277,13 +275,9 @@ export default function PhotoCropOverlay({
     const fx = (ptDisp.x - vpt[4]) / zoom;
     const fy = (ptDisp.y - vpt[5]) / zoom;
 
-    const imgLeft = activeImage.left || 0;
-    const imgTop = activeImage.top || 0;
-    const imgScaledW = activeImage.getScaledWidth() || 1;
-    const imgScaledH = activeImage.getScaledHeight() || 1;
-
-    const relX = (fx - imgLeft) / imgScaledW;
-    const relY = (fy - imgTop) / imgScaledH;
+    const bRect = activeImage.getBoundingRect();
+    const relX = (fx - bRect.left) / (bRect.width || 1);
+    const relY = (fy - bRect.top) / (bRect.height || 1);
 
     const rawC = rawCanvasRef.current;
     const rawX = Math.round(relX * rawC.width);
@@ -338,17 +332,14 @@ export default function PhotoCropOverlay({
 
     const vpt = fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0];
     const zoom = fabricCanvas.getZoom() || 1;
-    const imgLeft = activeImage.left || 0;
-    const imgTop = activeImage.top || 0;
-    const imgScaledW = activeImage.getScaledWidth() || 1;
-    const imgScaledH = activeImage.getScaledHeight() || 1;
+    const bRect = activeImage.getBoundingRect();
 
     // Helper: Convert Display Point -> Raw Pixel Point
     const dispToRaw = (pt: Point2D): Point2D => {
       const fx = (pt.x - vpt[4]) / zoom;
       const fy = (pt.y - vpt[5]) / zoom;
-      const relX = (fx - imgLeft) / imgScaledW;
-      const relY = (fy - imgTop) / imgScaledH;
+      const relX = (fx - bRect.left) / (bRect.width || 1);
+      const relY = (fy - bRect.top) / (bRect.height || 1);
       return {
         x: Math.max(0, Math.min(natW, Math.round(relX * natW))),
         y: Math.max(0, Math.min(natH, Math.round(relY * natH))),
@@ -396,24 +387,36 @@ export default function PhotoCropOverlay({
 
   // Apply Aspect Ratio Presets
   const handleApplyPreset = (ratioWtoH: number) => {
-    const curW = normalRect.width;
-    let newW = curW;
-    let newH = newW / ratioWtoH;
+    if (!fabricCanvas || !activeImage) return;
+    const vpt = fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+    const zoom = fabricCanvas.getZoom() || 1;
+    const bRect = activeImage.getBoundingRect();
 
-    const nextRect = {
-      left: normalRect.left,
-      top: normalRect.top,
-      width: Math.round(newW),
-      height: Math.round(newH),
-    };
+    const dispLeft = bRect.left * zoom + vpt[4];
+    const dispTop = bRect.top * zoom + vpt[5];
+    const dispW = bRect.width * zoom;
+    const dispH = bRect.height * zoom;
 
-    setNormalRect(nextRect);
+    let targetW = dispW * 0.85;
+    let targetH = targetW / ratioWtoH;
+
+    if (targetH > dispH * 0.85) {
+      targetH = dispH * 0.85;
+      targetW = targetH * ratioWtoH;
+    }
+
+    const cLeft = Math.round(dispLeft + (dispW - targetW) / 2);
+    const cTop = Math.round(dispTop + (dispH - targetH) / 2);
+    const cW = Math.round(targetW);
+    const cH = Math.round(targetH);
+
+    setNormalRect({ left: cLeft, top: cTop, width: cW, height: cH });
 
     setQuadDisp({
-      tl: { x: nextRect.left, y: nextRect.top },
-      tr: { x: nextRect.left + nextRect.width, y: nextRect.top },
-      br: { x: nextRect.left + nextRect.width, y: nextRect.top + nextRect.height },
-      bl: { x: nextRect.left, y: nextRect.top + nextRect.height },
+      tl: { x: cLeft, y: cTop },
+      tr: { x: cLeft + cW, y: cTop },
+      br: { x: cLeft + cW, y: cTop + cH },
+      bl: { x: cLeft, y: cTop + cH },
     });
   };
 
@@ -426,18 +429,15 @@ export default function PhotoCropOverlay({
 
     const vpt = fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0];
     const zoom = fabricCanvas.getZoom() || 1;
-    const imgLeft = activeImage.left || 0;
-    const imgTop = activeImage.top || 0;
-    const imgScaledW = activeImage.getScaledWidth() || 1;
-    const imgScaledH = activeImage.getScaledHeight() || 1;
+    const bRect = activeImage.getBoundingRect();
     const natW = rawCanvasRef.current.width;
     const natH = rawCanvasRef.current.height;
 
     const rawToDisp = (pt: Point2D): Point2D => {
       const relX = pt.x / natW;
       const relY = pt.y / natH;
-      const fx = imgLeft + relX * imgScaledW;
-      const fy = imgTop + relY * imgScaledH;
+      const fx = bRect.left + relX * bRect.width;
+      const fy = bRect.top + relY * bRect.height;
       return {
         x: Math.round(fx * zoom + vpt[4]),
         y: Math.round(fy * zoom + vpt[5]),
@@ -731,30 +731,43 @@ export default function PhotoCropOverlay({
 
         {/* Presets */}
         <button
+          onClick={() => handleApplyPreset(40 / 50)}
+          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-emerald-300 font-mono font-bold transition cursor-pointer flex items-center gap-1"
+          title="BD Passport (40x50mm)"
+        >
+          <UserCheck className="w-3 h-3" />
+          <span>40×50mm</span>
+        </button>
+
+        <button
           onClick={() => handleApplyPreset(35 / 45)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-amber-300 font-mono font-bold transition cursor-pointer flex items-center gap-1"
+          title="E-Passport / Visa (35x45mm)"
         >
           <UserCheck className="w-3 h-3" />
           <span>35×45mm</span>
         </button>
 
         <button
+          onClick={() => handleApplyPreset(25 / 30)}
+          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-cyan-300 font-mono font-bold transition cursor-pointer"
+          title="BD Stamp Size (25x30mm)"
+        >
+          <span>25×30mm</span>
+        </button>
+
+        <button
           onClick={() => handleApplyPreset(1)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-slate-300 font-mono transition cursor-pointer"
+          title="Square (1:1)"
         >
           1:1
         </button>
 
         <button
-          onClick={() => handleApplyPreset(4 / 3)}
-          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-slate-300 font-mono transition cursor-pointer"
-        >
-          4:3
-        </button>
-
-        <button
           onClick={() => handleApplyPreset(210 / 297)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-slate-300 font-mono transition cursor-pointer"
+          title="A4 Document"
         >
           A4
         </button>

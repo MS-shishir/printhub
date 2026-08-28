@@ -88,6 +88,10 @@ export async function exportPDF(
     return embedded;
   };
 
+  const hasBorder = !!layoutConfig.showPhotoBorder && (layoutConfig.photoBorderMm ?? 1.2) > 0;
+  const borderMm = hasBorder ? (layoutConfig.photoBorderMm ?? 1.2) : 0;
+  const borderPt = mmToPt(borderMm);
+
   // Draw each placed photo
   for (const item of itemsToExport) {
     const x = mmToPt(item.xMm);
@@ -96,10 +100,11 @@ export async function exportPDF(
     const w = mmToPt(item.widthMm);
     const h = mmToPt(item.heightMm);
 
-    // Background fill
+    // 1. Background Fill for photo
     const bg = hexToRgbNorm(bgColor);
     page.drawRectangle({ x, y, width: w, height: h, color: rgb(bg.r, bg.g, bg.b) });
 
+    // 2. Draw Image at 100% full exact size (never shrunk)
     try {
       const embeddedImage = await getEmbeddedImage(item.url);
       if (item.rotateDegrees === 90) {
@@ -117,18 +122,46 @@ export async function exportPDF(
       console.warn('[PDF Export] Could not embed image for item', item.id, err);
     }
 
-    // Cut lines
+    // 3. Dashed Cut lines (ডট ডট কাটলাইন) with optional offset & corner extensions
     if (layoutConfig.showCutlines) {
+      const offsetPt = mmToPt(layoutConfig.cutlineOffsetMm ?? 0);
+      const extPt = mmToPt(layoutConfig.cutlineExtensionMm ?? 0);
+      const cutX = x - offsetPt;
+      const cutY = y - offsetPt;
+      const cutW = w + 2 * offsetPt;
+      const cutH = h + 2 * offsetPt;
+      const lineColor = rgb(0.35, 0.35, 0.35);
+
+      // Dashed rectangle
       page.drawRectangle({
-        x, y, width: w, height: h,
-        borderColor: rgb(0.7, 0.7, 0.7),
+        x: cutX,
+        y: cutY,
+        width: cutW,
+        height: cutH,
+        borderColor: lineColor,
         borderWidth: 0.5,
-        borderDashArray: [2, 2],
+        borderDashArray: [2.5, 2.5],
       });
+
+      // Corner Crosshair Extensions (if extension > 0)
+      if (extPt > 0) {
+        // Top-Left (in PDF Y: top of cut box is cutY + cutH)
+        page.drawLine({ start: { x: cutX - extPt, y: cutY + cutH }, end: { x: cutX, y: cutY + cutH }, color: lineColor, thickness: 0.5 });
+        page.drawLine({ start: { x: cutX, y: cutY + cutH }, end: { x: cutX, y: cutY + cutH + extPt }, color: lineColor, thickness: 0.5 });
+        // Top-Right
+        page.drawLine({ start: { x: cutX + cutW, y: cutY + cutH }, end: { x: cutX + cutW + extPt, y: cutY + cutH }, color: lineColor, thickness: 0.5 });
+        page.drawLine({ start: { x: cutX + cutW, y: cutY + cutH }, end: { x: cutX + cutW, y: cutY + cutH + extPt }, color: lineColor, thickness: 0.5 });
+        // Bottom-Left
+        page.drawLine({ start: { x: cutX - extPt, y: cutY }, end: { x: cutX, y: cutY }, color: lineColor, thickness: 0.5 });
+        page.drawLine({ start: { x: cutX, y: cutY - extPt }, end: { x: cutX, y: cutY }, color: lineColor, thickness: 0.5 });
+        // Bottom-Right
+        page.drawLine({ start: { x: cutX + cutW, y: cutY }, end: { x: cutX + cutW + extPt, y: cutY }, color: lineColor, thickness: 0.5 });
+        page.drawLine({ start: { x: cutX + cutW, y: cutY - extPt }, end: { x: cutX + cutW, y: cutY }, color: lineColor, thickness: 0.5 });
+      }
     }
   }
 
-  // Print header
+  // Optional Print header (Only if explicitly enabled)
   if (layoutConfig.showPrintHeader) {
     page.drawText(
       `PrintHub Passport Studio — ${template.country} ${template.name} — ${itemsToExport.length} copies — 300 DPI`,
@@ -182,17 +215,41 @@ export async function printPassportSheet(
         rotateDegrees: layoutConfig.rotatePhotoDegrees || 0,
       }));
 
+  const offsetMm = layoutConfig.cutlineOffsetMm ?? 0;
+  const extMm = layoutConfig.cutlineExtensionMm ?? 0;
+
   let photosHtml = '';
   for (const item of itemsToPrint) {
-    const borderStyle = layoutConfig.showCutlines
-      ? 'border: 1px dashed rgba(0,0,0,0.4);'
-      : 'border: none;';
-
     const isRotated = item.rotateDegrees === 90;
 
     const imgStyle = isRotated
       ? `position: absolute; left: 50%; top: 50%; width: ${mm(item.heightMm)}; height: ${mm(item.widthMm)}; transform: translate(-50%, -50%) rotate(90deg); object-fit: cover;`
-      : `display: block; width: 100%; height: 100%; object-fit: cover;`;
+      : `width: 100%; height: 100%; object-fit: cover; display: block;`;
+
+    // Dashed cutline box & Corner crosshairs in HTML/CSS
+    const cutlineHtml = layoutConfig.showCutlines ? `
+      <div style="
+        position: absolute;
+        left: -${offsetMm}mm;
+        top: -${offsetMm}mm;
+        width: ${item.widthMm + 2 * offsetMm}mm;
+        height: ${item.heightMm + 2 * offsetMm}mm;
+        border: 1px dashed rgba(0,0,0,0.45);
+        pointer-events: none;
+        box-sizing: border-box;
+      ">
+        ${extMm > 0 ? `
+          <div style="position: absolute; left: -${extMm}mm; top: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; left: -1px; top: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; right: -${extMm}mm; top: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; right: -1px; top: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; left: -${extMm}mm; bottom: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; left: -1px; bottom: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; right: -${extMm}mm; bottom: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
+          <div style="position: absolute; right: -1px; bottom: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
+        ` : ''}
+      </div>
+    ` : '';
 
     photosHtml += `
       <div style="
@@ -201,15 +258,13 @@ export async function printPassportSheet(
         top: ${mm(item.yMm)};
         width: ${mm(item.widthMm)};
         height: ${mm(item.heightMm)};
-        overflow: hidden;
-        ${borderStyle}
         background: ${bgColor};
         box-sizing: border-box;
       ">
-        <img
-          src="${item.url}"
-          style="${imgStyle}"
-        />
+        ${cutlineHtml}
+        <div style="width: 100%; height: 100%; overflow: hidden; position: relative;">
+          <img src="${item.url}" style="${imgStyle}" />
+        </div>
       </div>`;
   }
 
@@ -247,25 +302,50 @@ export async function printPassportSheet(
     </head>
     <body>
       <div class="sheet">${photosHtml}</div>
-      <script>
-        window.onload = () => {
-          setTimeout(() => {
-            window.print();
-            window.onafterprint = () => window.close();
-          }, 250);
-        };
-      </script>
     </body>
     </html>`;
 
-  const win = window.open('', '_blank', 'width=950,height=750');
-  if (win) {
-    win.document.write(printHtml);
-    win.document.close();
-  }
+  printViaIframe(printHtml);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+export function printViaIframe(htmlContent: string): void {
+  const existingFrame = document.getElementById('printhub-direct-print-frame');
+  if (existingFrame) {
+    existingFrame.remove();
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'printhub-direct-print-frame';
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.visibility = 'hidden';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc) return;
+
+  doc.open();
+  doc.write(htmlContent);
+  doc.close();
+
+  iframe.contentWindow?.focus();
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.print();
+    } catch (e) {
+      console.warn('Iframe print error', e);
+    }
+    setTimeout(() => {
+      iframe.remove();
+    }, 2500);
+  }, 350);
+}
 
 function triggerDownload(url: string, filename: string): void {
   const a = document.createElement('a');

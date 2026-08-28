@@ -95,6 +95,8 @@ export interface ImageTransform {
   flipY: boolean;
 }
 
+export type CutlineStyle = 'none' | 'box' | 'extended' | 'corner';
+
 // ─── Layout ──────────────────────────────────────────────────
 export interface LayoutConfig {
   copies: CopyCount;
@@ -103,9 +105,18 @@ export interface LayoutConfig {
   customHeightMm: number;
   gapMm: number;
   marginMm: number;
+  marginTopMm?: number;
+  marginBottomMm?: number;
+  marginLeftMm?: number;
+  marginRightMm?: number;
+  rollerSafeMarginMm?: number; // Non-printable paper feed roller margin (e.g. 5–12mm)
+  showRollerGuide?: boolean;   // Visual roller safe zone indicator
   alignPos?: 'top-left' | 'top-center' | 'center';
   showCutlines: boolean;
-  showPrintHeader: boolean;
+  cutlineOffsetMm?: number;    // 0mm = tight against image, 1–3mm = white space before cutline
+  cutlineExtensionMm?: number; // Distance cutline extends beyond corners (e.g. 0–5mm)
+  cutlineColor?: string;
+  showPrintHeader: boolean;    // Sheet header title (default false)
   autoFit: boolean;
   rotatePhotoDegrees?: number;
 }

@@ -139,6 +139,51 @@ export default function PrintPreview() {
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, displayW, displayH);
 
+    // ── Roller Safe Guides (Printer non-printable gripper margin) ───────────
+    if (layoutConfig.showRollerGuide) {
+      const topSafeMm = layoutConfig.marginTopMm ?? layoutConfig.marginMm ?? 8;
+      const botSafeMm = layoutConfig.rollerSafeMarginMm ?? 8;
+      const topSafePx = topSafeMm * scale;
+      const botSafePx = displayH - (botSafeMm * scale);
+
+      ctx.save();
+      // Top Roller Guide
+      if (topSafeMm > 0) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.04)';
+        ctx.fillRect(0, 0, displayW, topSafePx);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.35)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, topSafePx);
+        ctx.lineTo(displayW, topSafePx);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
+        ctx.font = `bold ${Math.max(8, Math.round(scale * 2.6))}px sans-serif`;
+        ctx.fillText(`▲ Top Feed Safe (${topSafeMm}mm)`, 8, Math.max(9, topSafePx - 3));
+      }
+
+      // Bottom Roller Gripper Guide
+      if (botSafeMm > 0) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.06)';
+        ctx.fillRect(0, botSafePx, displayW, displayH - botSafePx);
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, botSafePx);
+        ctx.lineTo(displayW, botSafePx);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
+        ctx.font = `bold ${Math.max(8, Math.round(scale * 2.6))}px sans-serif`;
+        ctx.fillText(`▼ Roller Gripper Safe Zone (${botSafeMm}mm)`, 8, Math.min(displayH - 4, botSafePx + 10));
+      }
+      ctx.restore();
+    }
+
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
       const isSelected = selIdx === idx;
@@ -147,6 +192,7 @@ export default function PrintPreview() {
       const w = item.widthMm * scale;
       const h = item.heightMm * scale;
 
+      // 1. Draw Image (Full 100% exact size, never shrunk)
       const imgEl = getOrLoadImage(item.url);
       if (imgEl) {
         if (item.rotateDegrees === 90) {
@@ -163,25 +209,58 @@ export default function PrintPreview() {
         ctx.fillRect(x, y, w, h);
       }
 
+      // 2. Dashed Cut Lines (ডট ডট কাটলাইন) with adjustable offset and corner extensions
       if (layoutConfig.showCutlines) {
+        const offsetMm = layoutConfig.cutlineOffsetMm ?? 0;
+        const offsetPx = offsetMm * scale;
+        const extMm = layoutConfig.cutlineExtensionMm ?? 0;
+        const extPx = extMm * scale;
+
+        const cutX = x - offsetPx;
+        const cutY = y - offsetPx;
+        const cutW = w + 2 * offsetPx;
+        const cutH = h + 2 * offsetPx;
+
         ctx.save();
-        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([2, 2]);
-        ctx.strokeRect(x, y, w, h);
+        ctx.strokeStyle = layoutConfig.cutlineColor || 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 0.65;
+        ctx.setLineDash([2.5, 2.5]); // Classic dot/dash cut line
+        ctx.strokeRect(cutX, cutY, cutW, cutH);
+
+        // Corner Crosshair Extensions (if extension > 0)
+        if (extPx > 0) {
+          ctx.beginPath();
+          // Top-Left Corner
+          ctx.moveTo(cutX - extPx, cutY); ctx.lineTo(cutX, cutY);
+          ctx.moveTo(cutX, cutY - extPx); ctx.lineTo(cutX, cutY);
+          // Top-Right Corner
+          ctx.moveTo(cutX + cutW, cutY); ctx.lineTo(cutX + cutW + extPx, cutY);
+          ctx.moveTo(cutX + cutW, cutY - extPx); ctx.lineTo(cutX + cutW, cutY);
+          // Bottom-Left Corner
+          ctx.moveTo(cutX - extPx, cutY + cutH); ctx.lineTo(cutX, cutY + cutH);
+          ctx.moveTo(cutX, cutY + cutH); ctx.lineTo(cutX, cutY + cutH + extPx);
+          // Bottom-Right Corner
+          ctx.moveTo(cutX + cutW, cutY + cutH); ctx.lineTo(cutX + cutW + extPx, cutY + cutH);
+          ctx.moveTo(cutX + cutW, cutY + cutH); ctx.lineTo(cutX + cutW, cutY + cutH + extPx);
+          ctx.stroke();
+        }
         ctx.setLineDash([]);
         ctx.restore();
       }
 
-      // Subtle selection glow (no border)
+      // Subtle selection glow
       if (isSelected) {
         ctx.save();
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.10)';
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.12)';
         ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x, y, w, h);
         ctx.restore();
       }
     }
 
+    // Optional Header Text (Only if explicitly enabled)
     if (layoutConfig.showPrintHeader) {
       ctx.fillStyle = 'rgba(100,116,139,0.6)';
       ctx.font = `bold ${Math.max(6, scale * 3)}px sans-serif`;
@@ -191,7 +270,7 @@ export default function PrintPreview() {
         Math.max(8, layoutConfig.marginMm * scale * 0.55)
       );
     }
-  }, [paperW, paperH, scale, layoutConfig.showCutlines, layoutConfig.showPrintHeader, layoutConfig.marginMm, template, getOrLoadImage]);
+  }, [paperW, paperH, scale, layoutConfig, template, getOrLoadImage]);
 
   useEffect(() => { drawNow(); }, [placedItems, selectedIndex, drawNow]);
 
@@ -200,11 +279,16 @@ export default function PrintPreview() {
     const isRotatedGlobal = layoutConfig.rotatePhotoDegrees === 90;
     const batchList: PlacedPhotoItem[] = [];
 
+    const marginMm = layoutConfig.marginMm ?? 8;
+    const topMarginMm = layoutConfig.marginTopMm ?? marginMm;
+    const botMarginMm = Math.max(layoutConfig.marginBottomMm ?? marginMm, layoutConfig.rollerSafeMarginMm ?? 0);
+    const leftMarginMm = layoutConfig.marginLeftMm ?? marginMm;
+    const rightMarginMm = layoutConfig.marginRightMm ?? marginMm;
+    const gapMm = layoutConfig.gapMm || 3;
+
     if (processedTray.length > 0) {
-      const marginMm = layoutConfig.marginMm || 10;
-      const gapMm = layoutConfig.gapMm || 3;
-      let currentXMm = marginMm;
-      let currentYMm = marginMm;
+      let currentXMm = leftMarginMm;
+      let currentYMm = topMarginMm;
       let rowMaxHMm = 0;
       let idCounter = 0;
 
@@ -214,12 +298,12 @@ export default function PrintPreview() {
           const isRotated = item.rotateDegrees === 90 || isRotatedGlobal;
           const pW = isRotated ? (item.heightMm || 45) : (item.widthMm || 35);
           const pH = isRotated ? (item.widthMm || 35) : (item.heightMm || 45);
-          if (currentXMm + pW > paperW - marginMm) {
-            currentXMm = marginMm;
+          if (currentXMm + pW > paperW - rightMarginMm) {
+            currentXMm = leftMarginMm;
             currentYMm += rowMaxHMm + gapMm;
             rowMaxHMm = 0;
           }
-          if (currentYMm + pH > paperH - marginMm) break;
+          if (currentYMm + pH > paperH - botMarginMm) break;
           rowMaxHMm = Math.max(rowMaxHMm, pH);
           batchList.push({
             id: `item_${idCounter}_${item.id}`,

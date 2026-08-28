@@ -2,7 +2,23 @@
   {
     "id": "bd_stamp",
     "country": "Bangladesh",
-    "name": "BD Stamp Size (20×25mm)",
+    "name": "BD Stamp Size (25×30mm)",
+    "flag": "🇧🇩",
+    "widthMm": 25,
+    "heightMm": 30,
+    "dpi": 300,
+    "faceHeightRatio": 0.75,
+    "eyePosition": { "xRatio": 0.5, "yRatio": 0.40 },
+    "headMargin": { "topRatio": 0.08, "bottomRatio": 0.10, "leftRatio": 0.08, "rightRatio": 0.08 },
+    "bgColor": "#ffffff",
+    "bgColorName": "White",
+    "rules": "Official Standard BD Stamp Size for Admit Cards, Bank Accounts & Official Forms (25×30mm).",
+    "category": "bangladesh"
+  },
+  {
+    "id": "bd_mini_stamp",
+    "country": "Bangladesh",
+    "name": "BD Mini Stamp (20×25mm)",
     "flag": "🇧🇩",
     "widthMm": 20,
     "heightMm": 25,
@@ -12,7 +28,7 @@
     "headMargin": { "topRatio": 0.08, "bottomRatio": 0.10, "leftRatio": 0.08, "rightRatio": 0.08 },
     "bgColor": "#ffffff",
     "bgColorName": "White",
-    "rules": "BD Admit Card & Office Stamp Size (20x25mm).",
+    "rules": "Mini Stamp Size for compact ID cards & special departmental forms (20×25mm).",
     "category": "bangladesh"
   },
   {

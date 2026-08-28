@@ -15,14 +15,35 @@ export class CropEngine {
   public static PRESETS: Record<string, CropPreset> = {
     passport_bd: {
       id: 'passport_bd',
-      name: '📸 পাসপোর্ট সাইজ (35x45mm)',
+      name: '📸 বিডি পাসপোর্ট (40x50mm)',
+      widthMm: 40,
+      heightMm: 50,
+      aspectRatio: 40 / 50,
+    },
+    passport_epassport: {
+      id: 'passport_epassport',
+      name: '🛂 ই-পাসপোর্ট / ভিসা (35x45mm)',
       widthMm: 35,
       heightMm: 45,
       aspectRatio: 35 / 45,
     },
+    joint_photo: {
+      id: 'joint_photo',
+      name: '👥 জয়েন্ট ছবি (55x45mm)',
+      widthMm: 55,
+      heightMm: 45,
+      aspectRatio: 55 / 45,
+    },
     stamp: {
       id: 'stamp',
-      name: '🔖 স্ট্যাম্প সাইজ (20x25mm)',
+      name: '🔖 স্ট্যাম্প সাইজ (25x30mm)',
+      widthMm: 25,
+      heightMm: 30,
+      aspectRatio: 25 / 30,
+    },
+    mini_stamp: {
+      id: 'mini_stamp',
+      name: '🔖 মিনি স্ট্যাম্প (20x25mm)',
       widthMm: 20,
       heightMm: 25,
       aspectRatio: 20 / 25,

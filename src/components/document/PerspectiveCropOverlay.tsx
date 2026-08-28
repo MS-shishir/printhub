@@ -12,7 +12,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Check, X, RotateCcw, Wand2, Maximize, Scissors, Sparkles, Move, ZoomIn,
+  Check, X, RotateCcw, RotateCw, Wand2, Maximize, Scissors, Sparkles, Move, ZoomIn,
   Crop, UserCheck
 } from 'lucide-react';
 import { DocumentQuad, Point2D } from '../../engines/PerspectiveWarpEngine';
@@ -26,6 +26,7 @@ interface PerspectiveCropOverlayProps {
   onAutoDetect: () => void;
   onResetQuad: () => void;
   onCancel: () => void;
+  onRotate?: (cw: boolean) => void;
   language: 'en' | 'bn';
 }
 
@@ -40,6 +41,7 @@ export default function PerspectiveCropOverlay({
   onAutoDetect,
   onResetQuad,
   onCancel,
+  onRotate,
   language
 }: PerspectiveCropOverlayProps) {
   const [activeTarget, setActiveTarget] = useState<DragTarget | null>(null);
@@ -373,6 +375,7 @@ export default function PerspectiveCropOverlay({
         <button
           onClick={onAutoDetect}
           className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl text-xs text-white font-extrabold shadow-md transition active:scale-95 cursor-pointer"
+          title="Auto Detect 4 Corners"
         >
           <Wand2 className="w-3 h-3 text-amber-300" />
           <span>{language === 'bn' ? 'অটো ৪-কোণা' : 'Auto Detect'}</span>
@@ -380,10 +383,35 @@ export default function PerspectiveCropOverlay({
 
         <div className="h-3.5 w-px bg-slate-700" />
 
+        {/* Rotate 90° Buttons */}
+        {onRotate && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onRotate(false)}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white rounded-lg transition active:scale-95 cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+              title="Rotate 90° CCW (বামে ঘোরান)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>90°</span>
+            </button>
+            <button
+              onClick={() => onRotate(true)}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white rounded-lg transition active:scale-95 cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+              title="Rotate 90° CW (ডানে ঘোরান)"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>90°</span>
+            </button>
+          </div>
+        )}
+
+        <div className="h-3.5 w-px bg-slate-700" />
+
         {/* Aspect Ratio Presets */}
         <button
           onClick={() => handleApplyPresetRatio(35 / 45)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-amber-300 font-mono font-bold transition cursor-pointer flex items-center gap-1"
+          title="Passport / Visa (35x45mm)"
         >
           <UserCheck className="w-3 h-3" />
           <span>35×45mm</span>
@@ -392,6 +420,7 @@ export default function PerspectiveCropOverlay({
         <button
           onClick={() => handleApplyPresetRatio(1)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-slate-300 font-mono transition cursor-pointer"
+          title="Square (1:1)"
         >
           1:1
         </button>
@@ -399,6 +428,7 @@ export default function PerspectiveCropOverlay({
         <button
           onClick={() => handleApplyPresetRatio(210 / 297)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-slate-300 font-mono transition cursor-pointer"
+          title="A4 Document"
         >
           A4
         </button>
@@ -406,16 +436,17 @@ export default function PerspectiveCropOverlay({
         <button
           onClick={() => handleApplyPresetRatio(85.6 / 53.98)}
           className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] text-slate-300 font-mono transition cursor-pointer"
+          title="Smart NID Card (85.6x54mm)"
         >
           NID
         </button>
 
         <button
           onClick={onResetQuad}
-          className="p-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-          title="Reset Corners"
+          className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
+          title="Reset Full Corners"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <Maximize className="w-3.5 h-3.5" />
         </button>
       </div>
 

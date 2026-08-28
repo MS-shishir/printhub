@@ -15,16 +15,20 @@ export function calculateLayout(
   const paper = config.paperSize;
   const paperW = config.paperSize.id === 'custom' ? config.customWidthMm : paper.widthMm;
   const paperH = config.paperSize.id === 'custom' ? config.customHeightMm : paper.heightMm;
-  const margin = config.marginMm;
-  const gap = config.gapMm;
+  const margin = config.marginMm ?? 8;
+  const topMargin = config.marginTopMm ?? margin;
+  const botMargin = Math.max(config.marginBottomMm ?? margin, config.rollerSafeMarginMm ?? 0);
+  const leftMargin = config.marginLeftMm ?? margin;
+  const rightMargin = config.marginRightMm ?? margin;
+  const gap = config.gapMm ?? 3;
 
   const isRotated = config.rotatePhotoDegrees === 90;
   const photoW = isRotated ? template.heightMm : template.widthMm;
   const photoH = isRotated ? template.widthMm : template.heightMm;
 
-  // Usable area inside margins
-  const usableW = paperW - margin * 2;
-  const usableH = paperH - margin * 2;
+  // Usable area inside margins & roller safe zone
+  const usableW = Math.max(0, paperW - leftMargin - rightMargin);
+  const usableH = Math.max(0, paperH - topMargin - botMargin);
 
   // Max columns and rows that fit
   const cols = Math.max(1, Math.floor((usableW + gap) / (photoW + gap)));
@@ -39,21 +43,21 @@ export function calculateLayout(
   const gridW = cols * photoW + (cols - 1) * gap;
   const gridH = actualRows * photoH + (actualRows - 1) * gap;
 
-  let startX = margin;
-  let startY = margin;
+  let startX = leftMargin;
+  let startY = topMargin;
 
   const align = config.alignPos || 'top-left';
 
   if (align === 'top-center') {
-    startX = Math.max(margin, (paperW - gridW) / 2);
-    startY = margin;
+    startX = Math.max(leftMargin, (paperW - gridW) / 2);
+    startY = topMargin;
   } else if (align === 'center') {
-    startX = Math.max(margin, (paperW - gridW) / 2);
-    startY = Math.max(margin, (paperH - gridH) / 2);
+    startX = Math.max(leftMargin, (paperW - gridW) / 2);
+    startY = Math.max(topMargin, (paperH - gridH) / 2);
   } else {
-    // top-left (default studio print layout starting from top margin)
-    startX = margin;
-    startY = margin;
+    // top-left (default studio print layout starting from margins)
+    startX = leftMargin;
+    startY = topMargin;
   }
 
   const placed: PlacedImage[] = [];
@@ -88,15 +92,19 @@ export function maxCopiesThatFit(
   const paper = config.paperSize;
   const paperW = config.paperSize.id === 'custom' ? config.customWidthMm : paper.widthMm;
   const paperH = config.paperSize.id === 'custom' ? config.customHeightMm : paper.heightMm;
-  const margin = config.marginMm;
-  const gap = config.gapMm;
+  const margin = config.marginMm ?? 8;
+  const topMargin = config.marginTopMm ?? margin;
+  const botMargin = Math.max(config.marginBottomMm ?? margin, config.rollerSafeMarginMm ?? 0);
+  const leftMargin = config.marginLeftMm ?? margin;
+  const rightMargin = config.marginRightMm ?? margin;
+  const gap = config.gapMm ?? 3;
 
   const isRotated = config.rotatePhotoDegrees === 90;
   const photoW = isRotated ? template.heightMm : template.widthMm;
   const photoH = isRotated ? template.widthMm : template.heightMm;
 
-  const usableW = paperW - margin * 2;
-  const usableH = paperH - margin * 2;
+  const usableW = Math.max(0, paperW - leftMargin - rightMargin);
+  const usableH = Math.max(0, paperH - topMargin - botMargin);
   const cols = Math.max(1, Math.floor((usableW + gap) / (photoW + gap)));
   const rows = Math.max(1, Math.floor((usableH + gap) / (photoH + gap)));
   return cols * rows;
