@@ -1,0 +1,91 @@
+{
+  "name": "printhub-studio",
+  "productName": "PrintHub Studio",
+  "version": "1.0.0",
+  "description": "PrintHub Studio — Professional Photo & Document Print Suite",
+  "author": "PrintHub Studio",
+  "private": true,
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist release",
+    "lint": "tsc --noEmit",
+    "test": "tsx src/tests/run-tests.ts",
+    "electron:dev": "concurrently -k \"vite --port=3000 --host=0.0.0.0\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build": "vite build && electron-builder --win",
+    "electron:build:dir": "vite build && electron-builder --win --dir",
+    "package": "npm run electron:build"
+  },
+  "build": {
+    "appId": "com.printhub.studio",
+    "productName": "PrintHub Studio",
+    "copyright": "Copyright © 2026 PrintHub Studio",
+    "npmRebuild": false,
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "icon": "public/logo.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PrintHub Studio"
+    }
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@hyzyla/pdfium": "^2.1.13",
+    "@imgly/background-removal": "^1.7.0",
+    "@mediapipe/face_detection": "^0.4.1646425229",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "bwip-js": "^4.11.2",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "fabric": "^7.4.0",
+    "jsbarcode": "^3.12.3",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.1.200",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/fabric": "^5.3.11",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^34.0.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3",
+    "wait-on": "^9.1.0"
+  }
+}
