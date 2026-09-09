@@ -31,19 +31,6 @@ export default function CropPanel({
         type: 'SET_TRANSFORM',
         payload: { zoom: 1, pan: { x: 0, y: 0 }, rotation: 0, flipX: false, flipY: false },
       });
-
-      const tpl = templates.find((t) => t.id === state.selectedTemplateId);
-      dispatch({
-        type: 'UPSERT_TRAY_ITEM',
-        payload: {
-          name: state.photoName || 'Processed Photo',
-          croppedUrl,
-          templateId: state.selectedTemplateId,
-          widthMm: tpl?.widthMm || 35,
-          heightMm: tpl?.heightMm || 45,
-          defaultCopies: 4,
-        },
-      });
     }
     dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'template' });
   };

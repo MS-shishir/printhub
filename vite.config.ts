@@ -42,5 +42,8 @@ export default defineConfig(() => {
         ignored: ['**/release/**', '**/dist/**', '**/.git/**']
       },
     },
+    build: {
+      emptyOutDir: true,
+    },
   };
 });

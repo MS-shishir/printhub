@@ -89,10 +89,23 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
   // Layer Management System State
   const [layers, setLayers] = useState<PhotoLayerItem[]>([]);
   const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
+  const [activeLayerOpacity, setActiveLayerOpacity] = useState<number>(100);
+  const [activeLayerBlendMode, setActiveLayerBlendMode] = useState<string>('Normal');
 
   // Dual-Mode Crop State (Normal Rectangular Crop & 4-Corner Perspective Warp)
   const [isCropActive, setIsCropActive] = useState<boolean>(false);
   const [cropMode, setCropMode] = useState<CropMode>('normal');
+  const isCropActiveRef = useRef<boolean>(false);
+  const [activeCropTargetId, setActiveCropTargetId] = useState<string | null>(null);
+  const activeCropTargetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    isCropActiveRef.current = isCropActive;
+    if (!isCropActive) {
+      activeCropTargetIdRef.current = null;
+      setActiveCropTargetId(null);
+    }
+  }, [isCropActive]);
 
   // Shoulder Level Alignment Guide State
 
@@ -438,7 +451,22 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     try {
       await fabricCanvasRef.current.loadFromJSON(prevSnapshot.canvasJson);
       const objects = fabricCanvasRef.current?.getObjects() || [];
-      objects.forEach((obj: any) => {
+      const jsonObjects = (prevSnapshot.canvasJson as any)?.objects || [];
+
+      objects.forEach((obj: any, idx: number) => {
+        const jsonObj = jsonObjects[idx];
+        if (jsonObj?.id) {
+          obj.id = jsonObj.id;
+        } else if (!obj.id) {
+          obj.id = `layer-${idx}-${Date.now()}`;
+        }
+
+        if (jsonObj?.name) {
+          obj.name = jsonObj.name;
+        } else if (!obj.name) {
+          obj.name = obj.type === 'image' ? `Photo Layer ${idx + 1}` : `Layer ${idx + 1}`;
+        }
+
         if (obj.type === 'image' && !obj._rawSourceElement && obj.getElement()) {
           obj._rawSourceElement = obj.getElement();
         }
@@ -447,6 +475,15 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       applyFabricFilters(prevSnapshot.filterProps);
       fabricCanvasRef.current?.renderAll();
       syncLayers();
+
+      if (objects.length > 0) {
+        const topObj = objects[objects.length - 1];
+        fabricCanvasRef.current.setActiveObject(topObj);
+        setActiveLayerId((topObj as any).id);
+        fabricCanvasRef.current.renderAll();
+      } else {
+        setActiveLayerId(null);
+      }
     } catch (err) {
       console.error('Error during Undo:', err);
     } finally {
@@ -475,7 +512,22 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     try {
       await fabricCanvasRef.current.loadFromJSON(nextSnapshot.canvasJson);
       const objects = fabricCanvasRef.current?.getObjects() || [];
-      objects.forEach((obj: any) => {
+      const jsonObjects = (nextSnapshot.canvasJson as any)?.objects || [];
+
+      objects.forEach((obj: any, idx: number) => {
+        const jsonObj = jsonObjects[idx];
+        if (jsonObj?.id) {
+          obj.id = jsonObj.id;
+        } else if (!obj.id) {
+          obj.id = `layer-${idx}-${Date.now()}`;
+        }
+
+        if (jsonObj?.name) {
+          obj.name = jsonObj.name;
+        } else if (!obj.name) {
+          obj.name = obj.type === 'image' ? `Photo Layer ${idx + 1}` : `Layer ${idx + 1}`;
+        }
+
         if (obj.type === 'image' && !obj._rawSourceElement && obj.getElement()) {
           obj._rawSourceElement = obj.getElement();
         }
@@ -484,6 +536,15 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       applyFabricFilters(nextSnapshot.filterProps);
       fabricCanvasRef.current?.renderAll();
       syncLayers();
+
+      if (objects.length > 0) {
+        const topObj = objects[objects.length - 1];
+        fabricCanvasRef.current.setActiveObject(topObj);
+        setActiveLayerId((topObj as any).id);
+        fabricCanvasRef.current.renderAll();
+      } else {
+        setActiveLayerId(null);
+      }
     } catch (err) {
       console.error('Error during Redo:', err);
     } finally {
@@ -596,10 +657,29 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
 
     fabricCanvas.on('selection:created', (e) => updateActiveLayer(e.selected));
     fabricCanvas.on('selection:updated', (e) => updateActiveLayer(e.selected));
-    fabricCanvas.on('selection:cleared', () => setActiveLayerId(null));
-    fabricCanvas.on('object:added', () => { syncLayers(); saveCanvasHistory(); });
-    fabricCanvas.on('object:modified', () => { syncLayers(); saveCanvasHistory(); });
-    fabricCanvas.on('object:removed', () => { syncLayers(); saveCanvasHistory(); });
+    fabricCanvas.on('selection:cleared', () => {
+      if (!isCropActiveRef.current) {
+        setActiveLayerId(null);
+      }
+    });
+    fabricCanvas.on('object:added', () => {
+      if (!isUndoRedoActionRef.current) {
+        syncLayers();
+        saveCanvasHistory();
+      }
+    });
+    fabricCanvas.on('object:modified', () => {
+      if (!isUndoRedoActionRef.current) {
+        syncLayers();
+        saveCanvasHistory();
+      }
+    });
+    fabricCanvas.on('object:removed', () => {
+      if (!isUndoRedoActionRef.current) {
+        syncLayers();
+        saveCanvasHistory();
+      }
+    });
 
     const bootProject = async () => {
       if (currentProjectId) {
@@ -698,11 +778,33 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       setIsExportModalOpen(true);
     };
 
+    const handlePhotoAction = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      const action = customEvt.detail?.action;
+      if (!action) return;
+
+      if (action === 'crop') {
+        handleToggleCrop();
+      } else if (action === 'bg-remove') {
+        setIsRetouchModalOpen(true);
+      } else if (action === 'export' || action === 'pdf' || action === 'print') {
+        setIsExportModalOpen(true);
+      } else if (action === 'duplicate') {
+        handleDuplicateActiveObject();
+      } else if (action === 'fit' || action === 'view') {
+        handleResetZoom();
+      } else if (action === 'delete') {
+        handleDeleteSelected();
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('printhub:open-photo-export', handleOpenExportEvent);
+    window.addEventListener('printhub:photo-action', handlePhotoAction);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('printhub:open-photo-export', handleOpenExportEvent);
+      window.removeEventListener('printhub:photo-action', handlePhotoAction);
     };
   }, []);
 
@@ -718,19 +820,94 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
   const syncLayers = () => {
     if (!fabricCanvasRef.current) return;
     const objects = fabricCanvasRef.current.getObjects();
-    const layerItems: PhotoLayerItem[] = objects.map((obj, idx) => ({
-      id: (obj as any).id || `layer-${idx}`,
-      type: obj.type || 'Object',
-      name: (obj as any).name || `Layer ${idx + 1}`,
-      visible: obj.visible !== false,
-      locked: !!obj.lockMovementX,
-    }));
-    setLayers(layerItems.reverse());
+    const layerItems: PhotoLayerItem[] = objects.map((obj, idx) => {
+      if (!(obj as any).id) {
+        (obj as any).id = `layer-${idx}-${Date.now()}`;
+      }
+      if (!(obj as any).name) {
+        (obj as any).name = obj.type === 'image' ? `Photo Layer ${idx + 1}` : `Layer ${idx + 1}`;
+      }
+      return {
+        id: (obj as any).id,
+        type: obj.type || 'Object',
+        name: (obj as any).name,
+        visible: obj.visible !== false,
+        locked: !!obj.lockMovementX,
+      };
+    });
+    setLayers([...layerItems].reverse());
+
+    const activeObj = fabricCanvasRef.current.getActiveObject();
+    if (activeObj) {
+      if (!(activeObj as any).id) {
+        (activeObj as any).id = `layer-active-${Date.now()}`;
+      }
+      setActiveLayerId((activeObj as any).id);
+    }
   };
 
   const updateActiveLayer = (selected?: fabric.Object[]) => {
     if (selected && selected.length > 0) {
-      setActiveLayerId((selected[0] as any).id || null);
+      const obj = selected[0] as any;
+      if (!obj.id) {
+        obj.id = `layer-${Date.now()}`;
+        syncLayers();
+      }
+      setActiveLayerId(obj.id);
+      setActiveLayerOpacity(Math.round((obj.opacity ?? 1) * 100));
+
+      const comp = obj.globalCompositeOperation || 'source-over';
+      const revMap: Record<string, string> = {
+        'source-over': 'Normal',
+        'multiply': 'Multiply',
+        'screen': 'Screen',
+        'overlay': 'Overlay',
+        'soft-light': 'Soft Light',
+        'hard-light': 'Hard Light',
+        'color-dodge': 'Color Dodge',
+        'darken': 'Darken',
+        'lighten': 'Lighten',
+        'difference': 'Difference',
+      };
+      setActiveLayerBlendMode(revMap[comp] || 'Normal');
+    } else {
+      setActiveLayerId(null);
+      setActiveLayerOpacity(100);
+      setActiveLayerBlendMode('Normal');
+    }
+  };
+
+  const handleLayerOpacityChange = (val: number) => {
+    setActiveLayerOpacity(val);
+    if (!fabricCanvasRef.current) return;
+    const activeObj = fabricCanvasRef.current.getActiveObject();
+    if (activeObj) {
+      activeObj.set('opacity', val / 100);
+      fabricCanvasRef.current.renderAll();
+      saveCanvasHistory(false);
+    }
+  };
+
+  const handleLayerBlendModeChange = (mode: string) => {
+    setActiveLayerBlendMode(mode);
+    if (!fabricCanvasRef.current) return;
+    const activeObj = fabricCanvasRef.current.getActiveObject();
+    if (activeObj) {
+      const modeMap: Record<string, GlobalCompositeOperation> = {
+        'Normal': 'source-over',
+        'Multiply': 'multiply',
+        'Screen': 'screen',
+        'Overlay': 'overlay',
+        'Soft Light': 'soft-light',
+        'Hard Light': 'hard-light',
+        'Color Dodge': 'color-dodge',
+        'Darken': 'darken',
+        'Lighten': 'lighten',
+        'Difference': 'difference',
+      };
+      activeObj.set('globalCompositeOperation', modeMap[mode] || 'source-over');
+      fabricCanvasRef.current.renderAll();
+      saveCanvasHistory(true);
     }
   };
 
@@ -1048,6 +1225,14 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
       else if (tool === 'crop' || tool === 'warp_crop') {
         if (localAdjustmentsMode === 'local') setLocalAdjustmentsMode('global');
         if (canvas) {
+          const currentActive = canvas.getActiveObject();
+          const targetId = (currentActive && (currentActive as any).id) || activeLayerId || null;
+          if (targetId) {
+            setActiveLayerId(targetId);
+            setActiveCropTargetId(targetId);
+            activeCropTargetIdRef.current = targetId;
+          }
+          isCropActiveRef.current = true;
           canvas.discardActiveObject();
           canvas.getObjects().forEach((obj) => {
             obj.selectable = false;
@@ -1173,7 +1358,14 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     }
   };
 
-  const handleApplyCropResult = (resultCanvas: HTMLCanvasElement) => {
+  const handleApplyCropResult = (
+    resultCanvas: HTMLCanvasElement,
+    cropMeta?: {
+      sceneRect?: { left: number; top: number; width: number; height: number };
+      targetObject?: any;
+      targetObjects?: any[];
+    }
+  ) => {
     if (!fabricCanvasRef.current) {
       setIsCropActive(false);
       return;
@@ -1183,32 +1375,115 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     const imgObj = new Image();
     imgObj.onload = () => {
       if (!fabricCanvasRef.current) return;
+      const fCanvas = fabricCanvasRef.current;
+      const allObjects = fCanvas.getObjects();
+
+      // Find the specific target objects to replace
+      let targetsToRemove: fabric.FabricObject[] = [];
+
+      if (cropMeta?.targetObjects && cropMeta.targetObjects.length > 0) {
+        targetsToRemove = cropMeta.targetObjects.filter((o) => allObjects.includes(o));
+      } else if (cropMeta?.targetObject && allObjects.includes(cropMeta.targetObject)) {
+        targetsToRemove = [cropMeta.targetObject];
+      } else if (activeCropTargetIdRef.current) {
+        const obj = allObjects.find((o) => (o as any).id === activeCropTargetIdRef.current);
+        if (obj) targetsToRemove = [obj];
+      } else if (activeLayerId) {
+        const obj = allObjects.find((o) => (o as any).id === activeLayerId);
+        if (obj) targetsToRemove = [obj];
+      } else if (fCanvas.getActiveObject()) {
+        const active = fCanvas.getActiveObject();
+        if (active) targetsToRemove = [active];
+      }
+
+      // If multiple objects exist on canvas and no targets identified yet, find object with highest overlap
+      if (targetsToRemove.length === 0 && cropMeta?.sceneRect && allObjects.length > 1) {
+        const sr = cropMeta.sceneRect;
+        let maxOverlap = 0;
+        let bestObj: fabric.FabricObject | null = null;
+        allObjects.forEach((obj) => {
+          const objB = (obj as any).getBoundingRect ? (obj as any).getBoundingRect(true) : {
+            left: obj.left || 0,
+            top: obj.top || 0,
+            width: (obj as any).getScaledWidth ? (obj as any).getScaledWidth() : (obj.width || 100),
+            height: (obj as any).getScaledHeight ? (obj as any).getScaledHeight() : (obj.height || 100),
+          };
+          const oLeft = Math.max(sr.left, objB.left);
+          const oTop = Math.max(sr.top, objB.top);
+          const oRight = Math.min(sr.left + sr.width, objB.left + objB.width);
+          const oBottom = Math.min(sr.top + sr.height, objB.top + objB.height);
+          if (oRight > oLeft && oBottom > oTop) {
+            const overlapArea = (oRight - oLeft) * (oBottom - oTop);
+            if (overlapArea > maxOverlap) {
+              maxOverlap = overlapArea;
+              bestObj = obj;
+            }
+          }
+        });
+        if (bestObj) targetsToRemove = [bestObj];
+      }
+
+      if (targetsToRemove.length === 0 && allObjects.length === 1) {
+        targetsToRemove = [allObjects[0]];
+      }
+
+      const primaryTarget = targetsToRemove[0] || null;
+
       const fabricImage = new fabric.Image(imgObj);
       (fabricImage as any)._rawSourceElement = resultCanvas;
-      (fabricImage as any).id = `crop-${Date.now()}`;
-      (fabricImage as any).name = cropMode === 'normal' ? 'Cropped Photo' : '4-Corner Warped Photo';
+      (fabricImage as any).id = primaryTarget ? (primaryTarget as any).id : `crop-${Date.now()}`;
+      (fabricImage as any).name = targetsToRemove.length > 1
+        ? (language === 'bn' ? 'কম্পোজিট ক্রপড ফটো' : 'Composite Cropped Photo')
+        : (primaryTarget ? ((primaryTarget as any).name || 'Cropped Photo') : (cropMode === 'normal' ? 'Cropped Photo' : '4-Corner Warped Photo'));
 
-      const cW = fabricCanvasRef.current.width || 800;
-      const cH = fabricCanvasRef.current.height || 600;
-      if (resultCanvas.width > cW * 0.85 || resultCanvas.height > cH * 0.85) {
-        fabricImage.scaleToWidth(cW * 0.85);
-      }
-
-      const activeObj = fabricCanvasRef.current.getActiveObject();
-      if (activeObj) {
-        fabricCanvasRef.current.remove(activeObj);
+      // Position the new cropped image precisely in canvas scene coordinates
+      if (cropMeta?.sceneRect) {
+        const sr = cropMeta.sceneRect;
+        fabricImage.set({
+          originX: 'left',
+          originY: 'top',
+          left: sr.left,
+          top: sr.top,
+          scaleX: sr.width / (imgObj.width || 1),
+          scaleY: sr.height / (imgObj.height || 1),
+        });
+      } else if (primaryTarget) {
+        fabricImage.set({
+          originX: 'left',
+          originY: 'top',
+          left: primaryTarget.left,
+          top: primaryTarget.top,
+          scaleX: primaryTarget.scaleX,
+          scaleY: primaryTarget.scaleY,
+          angle: primaryTarget.angle,
+        });
       } else {
-        const existing = fabricCanvasRef.current.getObjects().find(o => o.isType('image'));
-        if (existing) fabricCanvasRef.current.remove(existing);
+        const cW = fCanvas.width || 800;
+        const cH = fCanvas.height || 600;
+        if (resultCanvas.width > cW * 0.85 || resultCanvas.height > cH * 0.85) {
+          fabricImage.scaleToWidth(cW * 0.85);
+        }
       }
 
-      fabricCanvasRef.current.add(fabricImage);
-      fabricCanvasRef.current.centerObject(fabricImage);
-      fabricCanvasRef.current.setActiveObject(fabricImage);
-      fabricCanvasRef.current.renderAll();
+      // Remove targeted object(s) (either single photo or multiple overlapping photos)
+      targetsToRemove.forEach((obj) => {
+        fCanvas.remove(obj);
+      });
+
+      // Add the new cropped image
+      fCanvas.add(fabricImage);
+
+      if (!cropMeta?.sceneRect && targetsToRemove.length === 0) {
+        fCanvas.centerObject(fabricImage);
+      }
+
+      fCanvas.setActiveObject(fabricImage);
+      fCanvas.renderAll();
       syncLayers();
       saveCanvasHistory(true);
       setIsCropActive(false);
+      activeCropTargetIdRef.current = null;
+      setActiveCropTargetId(null);
       showToast(
         cropMode === 'normal'
           ? (language === 'bn' ? 'ক্রপ সফলভাবে সম্পন্ন হয়েছে!' : 'Photo Cropped Successfully!')
@@ -1349,8 +1624,34 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
   };
 
   const handleToggleCrop = () => {
-    setCropMode('normal');
-    setIsCropActive((prev) => !prev);
+    if (!isCropActive) {
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        const currentActive = canvas.getActiveObject();
+        const targetId = (currentActive && (currentActive as any).id) || activeLayerId || null;
+        if (targetId) {
+          setActiveLayerId(targetId);
+          setActiveCropTargetId(targetId);
+          activeCropTargetIdRef.current = targetId;
+        }
+        isCropActiveRef.current = true;
+        canvas.discardActiveObject();
+        canvas.getObjects().forEach((obj) => {
+          obj.selectable = false;
+          obj.evented = false;
+          obj.hasControls = false;
+          obj.hasBorders = false;
+        });
+        canvas.renderAll();
+      }
+      setCropMode('normal');
+      setIsCropActive(true);
+    } else {
+      isCropActiveRef.current = false;
+      setIsCropActive(false);
+      activeCropTargetIdRef.current = null;
+      setActiveCropTargetId(null);
+    }
   };
 
   const handleZoomIn = () => {
@@ -1870,12 +2171,19 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
             cropMode={cropMode}
             onSetCropMode={setCropMode}
             onApplyCropCanvas={handleApplyCropResult}
-            onCancelCrop={() => setIsCropActive(false)}
+            onCancelCrop={() => {
+              isCropActiveRef.current = false;
+              setIsCropActive(false);
+              activeCropTargetIdRef.current = null;
+              setActiveCropTargetId(null);
+            }}
             isProcessing={isProcessing}
             showShoulderRuler={showShoulderRuler}
             currentRotationAngle={currentRotationAngle}
             onRotateAngle={handleRotateAngle}
             onCloseShoulderRuler={() => setShowShoulderRuler(false)}
+            activeLayerId={activeLayerId}
+            activeCropTargetId={activeCropTargetId}
 
             isLocalPaintingActive={localAdjustmentsMode === 'local' && (activeTool === 'brush' || activeTool === 'eraser')}
             activeMaskCanvas={localStack.find((s) => s.id === activeLocalId)?.maskCanvas || null}
@@ -1968,7 +2276,11 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
               <LayersPanel
                 layers={layers}
                 activeLayerId={activeLayerId}
+                activeOpacity={activeLayerOpacity}
+                activeBlendMode={activeLayerBlendMode}
                 onSelectLayer={handleSelectLayer}
+                onOpacityChange={handleLayerOpacityChange}
+                onBlendModeChange={handleLayerBlendModeChange}
                 onToggleVisibility={handleToggleVisibility}
                 onToggleLock={handleToggleLock}
                 onMoveUp={handleMoveLayerUp}

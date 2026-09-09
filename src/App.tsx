@@ -1,14 +1,16 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   Camera, Palette, Printer, Keyboard, Maximize2, Minimize2, Languages,
-  Download, FileDown, FileText, Zap, Sparkles, Globe
+  Download, FileDown, FileText, Zap, Sparkles, Globe, X, RefreshCw
 } from 'lucide-react';
 import { RecentFile, AppLanguage } from './types';
 import logoImg from './assets/logo.png';
+import { updateService, UpdateState } from './services/updateService';
 
 // Modals & UI Overlays
 import ShortcutKeysModal from './components/ShortcutKeysModal';
 import PrintPreviewModal from './components/PrintPreviewModal';
+import AboutUpdateModal from './components/ui/AboutUpdateModal';
 import ContextMenu from './components/ContextMenu';
 
 // Lazy loaded heavy studio submodules
@@ -42,7 +44,19 @@ export default function App() {
   // Modals & Context Controls
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState<boolean>(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
   const [activeFileName, setActiveFileName] = useState<string>('Studio_Capture_01.jpg');
+
+  // Auto-Update Engine State
+  const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+  const [dismissedUpdateToast, setDismissedUpdateToast] = useState<boolean>(false);
+
+  useEffect(() => {
+    const unsubscribe = updateService.subscribe((state) => {
+      setUpdateState(state);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number; isOpen: boolean }>({
     x: 0,
@@ -325,16 +339,32 @@ export default function App() {
           {/* Shortcuts Help */}
           <button
             onClick={() => setIsShortcutsModalOpen(true)}
-            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-md transition"
+            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-md transition cursor-pointer"
             title={language === 'bn' ? 'কীবোর্ড শর্টকাট (?)' : 'Keyboard Shortcuts (?)'}
           >
             <Keyboard className="w-4 h-4" />
           </button>
 
+          {/* About & Auto-Update Check */}
+          <button
+            onClick={() => setIsAboutModalOpen(true)}
+            className="relative flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-800 cursor-pointer"
+            title={language === 'bn' ? 'সফটওয়্যার তথ্য ও আপডেট (About & Updates)' : 'About & Updates'}
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${updateState.status === 'downloaded' ? 'text-emerald-400 animate-bounce' : updateState.status === 'available' || updateState.status === 'downloading' ? 'text-cyan-400 animate-spin' : 'text-indigo-400'}`} />
+            <span className="font-mono text-[10px]">v{updateState.currentVersion}</span>
+            {updateState.status === 'downloaded' && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5" />
+            )}
+            {(updateState.status === 'available' || updateState.status === 'downloading') && (
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse absolute -top-0.5 -right-0.5" />
+            )}
+          </button>
+
           {/* Fullscreen Toggle */}
           <button
             onClick={toggleFullscreen}
-            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-md transition"
+            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-md transition cursor-pointer"
             title={isFullscreen ? 'Exit Fullscreen (F11)' : 'Fullscreen (F11)'}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -418,12 +448,114 @@ export default function App() {
         isOpen={contextMenuState.isOpen}
         onClose={() => setContextMenuState({ ...contextMenuState, isOpen: false })}
         onAction={(actionId) => {
-          if (actionId === 'print') setIsPrintPreviewOpen(true);
-          if (actionId === 'optimize') handleSwitchModule('optimizer');
-          if (actionId === 'crop' || actionId === 'bg-remove') handleSwitchModule('photo');
-          if (actionId === 'passport') handleSwitchModule('passport');
+          if (actionId === 'print') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:trigger-passport-print'));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'print' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:trigger-document-print'));
+            } else {
+              setIsPrintPreviewOpen(true);
+            }
+          } else if (actionId === 'optimize') {
+            handleSwitchModule('optimizer');
+          } else if (actionId === 'crop') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:passport-action', { detail: { action: 'crop' } }));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'crop' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:document-action', { detail: { action: 'crop' } }));
+            } else {
+              handleSwitchModule('passport');
+            }
+          } else if (actionId === 'bg-remove') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:passport-action', { detail: { action: 'bg-remove' } }));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'bg-remove' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:document-action', { detail: { action: 'magic-filter' } }));
+            } else {
+              handleSwitchModule('photo');
+            }
+          } else if (actionId === 'pdf') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:passport-action', { detail: { action: 'export' } }));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'export' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:document-action', { detail: { action: 'export-pdf' } }));
+            } else {
+              window.dispatchEvent(new CustomEvent('printhub:open-passport-export'));
+            }
+          } else if (actionId === 'duplicate') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:passport-action', { detail: { action: 'duplicate' } }));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'duplicate' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:document-action', { detail: { action: 'duplicate' } }));
+            }
+          } else if (actionId === 'view') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:passport-action', { detail: { action: 'view' } }));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'view' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:document-action', { detail: { action: 'view' } }));
+            }
+          } else if (actionId === 'delete') {
+            if (activeModule === 'passport') {
+              window.dispatchEvent(new CustomEvent('printhub:passport-action', { detail: { action: 'delete' } }));
+            } else if (activeModule === 'photo') {
+              window.dispatchEvent(new CustomEvent('printhub:photo-action', { detail: { action: 'delete' } }));
+            } else if (activeModule === 'document') {
+              window.dispatchEvent(new CustomEvent('printhub:document-action', { detail: { action: 'delete' } }));
+            }
+          }
         }}
       />
+
+      {/* About & Auto-Update Modal */}
+      <AboutUpdateModal
+        isOpen={isAboutModalOpen}
+        onClose={() => setIsAboutModalOpen(false)}
+        language={language}
+      />
+
+      {/* Non-intrusive Floating Update Toast */}
+      {!dismissedUpdateToast && updateState.status === 'downloaded' && (
+        <div className="fixed bottom-4 right-4 z-40 p-4 bg-slate-900/95 border border-emerald-500/50 rounded-2xl shadow-2xl shadow-black/90 flex items-center gap-3 backdrop-blur-md animate-in slide-in-from-bottom-5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+            <Sparkles className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="text-xs">
+            <h4 className="font-extrabold text-white">
+              {language === 'bn' ? `PrintHub v${updateState.info?.version || ''} প্রস্তুত!` : `PrintHub v${updateState.info?.version || ''} Ready!`}
+            </h4>
+            <p className="text-[11px] text-slate-400">
+              {language === 'bn' ? 'আপডেট সম্পন্ন করতে রিস্টার্ট দিন' : 'Restart now to finish updating'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 ml-2">
+            <button
+              onClick={() => updateService.quitAndInstallUpdate()}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/30 transition cursor-pointer active:scale-95"
+            >
+              {language === 'bn' ? 'রিস্টার্ট' : 'Restart'}
+            </button>
+            <button
+              onClick={() => setDismissedUpdateToast(true)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

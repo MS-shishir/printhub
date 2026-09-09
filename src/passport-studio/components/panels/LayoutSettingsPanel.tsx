@@ -13,7 +13,7 @@ export default function LayoutSettingsPanel() {
 
   const totalBatchCopies = processedTray.length > 0
     ? processedTray.reduce((acc, item) => acc + item.copies, 0)
-    : layoutConfig.copies;
+    : 0;
 
   // Local string state for smooth typing & backspacing without input locking
   const [paperWidthInput, setPaperWidthInput] = useState<string>(() => String(layoutConfig.paperSize.widthMm || 210));

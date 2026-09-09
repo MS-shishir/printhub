@@ -79,7 +79,36 @@ export default function DocumentWorkspace({ onAddRecentFile, language }: Documen
     const handlePrintTrigger = () => {
       setIsPrintSheetModalOpen(true);
     };
+
+    const handleDocumentAction = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      const action = customEvt.detail?.action;
+      if (!action) return;
+
+      if (action === 'crop') {
+        const curPage = documentScanService.getActivePage();
+        if (curPage) {
+          documentScanService.updateActivePage({ isWarpMode: !curPage.isWarpMode });
+        }
+      } else if (action === 'magic-filter' || action === 'bg-remove') {
+        const curPage = documentScanService.getActivePage();
+        if (curPage) {
+          const nextMode = curPage.filterMode === 'magic_color' ? 'clean_bw' : 'magic_color';
+          documentScanService.updateActivePage({ filterMode: nextMode });
+        }
+      } else if (action === 'export-pdf' || action === 'pdf') {
+        handleDownloadAllPagesPdf('A4');
+      } else if (action === 'duplicate') {
+        const activeIdx = documentScanService.getActivePageIndex();
+        documentScanService.duplicatePage(activeIdx);
+      } else if (action === 'delete') {
+        const activeIdx = documentScanService.getActivePageIndex();
+        documentScanService.removePage(activeIdx);
+      }
+    };
+
     window.addEventListener('printhub:trigger-document-print', handlePrintTrigger);
+    window.addEventListener('printhub:document-action', handleDocumentAction);
 
     // Auto-import from scanner machine when new scan file arrives
     const unsubscribeScan = nativeHardwareService.onNewScan((scanEvent) => {
@@ -105,6 +134,7 @@ export default function DocumentWorkspace({ onAddRecentFile, language }: Documen
       unsubscribeDoc();
       unsubscribeScan();
       window.removeEventListener('printhub:trigger-document-print', handlePrintTrigger);
+      window.removeEventListener('printhub:document-action', handleDocumentAction);
     };
   }, [language, onAddRecentFile]);
 

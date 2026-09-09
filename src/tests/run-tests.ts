@@ -9,6 +9,7 @@ import { mmToPx, pxToMm, mmToPt, ptToMm, getPhotoPxDimensions, PRINT_DPI } from 
 import { calculateLayout, maxCopiesThatFit } from '../passport-studio/services/layout.service';
 import { HistoryEngine } from '../engines/HistoryEngine';
 import { PassportTemplate, LayoutConfig, PaperSize } from '../passport-studio/types/passport-types';
+import { rgbToLab, deltaE76, deltaEWeighted, decontaminatePixel } from '../passport-studio/utils/color-utils';
 
 let passed = 0;
 let failed = 0;
@@ -219,9 +220,35 @@ runTest('PerspectiveWarpEngine: Invert Matrix 3x3 successfully', () => {
 runTest('Document Specs: Smart NID 85.6x53.98mm converts accurately at 300 DPI', () => {
   const nidWPx = mmToPx(85.6, 300);
   const nidHPx = mmToPx(53.98, 300);
-
   assert.equal(Math.round(nidWPx), 1011);
   assert.equal(Math.round(nidHPx), 638);
+});
+
+// ── 5. Color Space & Classical Matting Math ──────────────────────────────
+console.log('\n▶ [5] Color Space Lab Math & Decontamination');
+
+runTest('ColorUtils: sRGB to D65-referenced CIE-L*a*b* conversion math', () => {
+  const white = rgbToLab(255, 255, 255);
+  assert.ok(white.l > 99.5, 'White L* should be ~100');
+  const black = rgbToLab(0, 0, 0);
+  assert.ok(black.l < 0.5, 'Black L* should be ~0');
+});
+
+runTest('ColorUtils: DeltaE76 and weighted DeltaE distance calculation', () => {
+  const c1 = rgbToLab(250, 250, 250);
+  const c2 = rgbToLab(30, 28, 26);
+  const dE = deltaE76(c1, c2);
+  assert.ok(dE > 80, 'DeltaE between white and dark hair should exceed 80');
+  const dEWeighted = deltaEWeighted(c1, c2, 1.0, 1.25);
+  assert.ok(dEWeighted > 80, 'Weighted DeltaE should exceed 80');
+});
+
+runTest('ColorUtils: Mathematical Color Decontamination (Unmixing spilled background light)', () => {
+  // 40% hair (30,28,26) + 60% white backdrop (250,250,250) = (162, 161, 160)
+  const decontam = decontaminatePixel(162, 161, 160, 250, 250, 250, 0.4, 0.95, 0.05);
+  assert.ok(decontam.r < 60, 'Decontaminated R should restore dark hair value');
+  assert.ok(decontam.g < 60, 'Decontaminated G should restore dark hair value');
+  assert.ok(decontam.b < 60, 'Decontaminated B should restore dark hair value');
 });
 
 // ── Test Summary ─────────────────────────────────────────────────────────

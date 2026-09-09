@@ -6,7 +6,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import { usePassportStore } from '../store';
 import { useFaceDetection } from './useFaceDetection';
 import { getTemplate } from '../services/template.service';
-import { applyChromaKey, sampleCornerBackgroundColor, enhancePhotoTo4K, fillBackground } from '../services/image-processing.service';
+import {
+  removeBackgroundClassical,
+  sampleCornerBackgroundColor,
+  enhancePhotoTo4K,
+  fillBackground
+} from '../services/image-processing.service';
 
 export function usePassportWorkflow() {
   const { state, dispatch, showToast } = usePassportStore();
@@ -85,35 +90,23 @@ export function usePassportWorkflow() {
       },
     });
 
-    // Auto-remove background by sampling background colors & running AI Subject Segmentation
+    // Sample background reference color without removing background automatically
     try {
       const keyRgb = await sampleCornerBackgroundColor(blobUrl);
       dispatch({
         type: 'SET_BG_CONFIG',
-        payload: { type: 'ai_removed', keyColor: keyRgb, isEnabled: true, tolerance: 40, feather: 6 },
+        payload: { type: 'solid', keyColor: keyRgb, isEnabled: false, tolerance: 38, feather: 4 },
       });
     } catch (e) {
       console.warn('[Auto BG Sample]', e);
     }
 
-    dispatch({
-      type: 'UPSERT_TRAY_ITEM',
-      payload: {
-        name: file.name,
-        croppedUrl: blobUrl,
-        templateId: state.selectedTemplateId || 'bd_pp',
-        widthMm: 40,
-        heightMm: 50,
-        defaultCopies: 4,
-      },
-    });
-
     dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'crop' });
-    showToast(`Background Auto-Removed! Crop & adjust for ${file.name}`, 'success');
+    showToast(`Photo loaded! Crop & adjust for ${file.name}`, 'info');
 
     // Auto-trigger face detection via ref to avoid circular dependency
     triggerFaceDetectionRef.current(blobUrl, img.naturalWidth, img.naturalHeight);
-  }, [dispatch, showToast, state.selectedTemplateId]);
+  }, [dispatch, showToast]);
 
   const loadImageFromDataUrl = useCallback(async (dataUrl: string, name = 'pasted_image.png') => {
     const img = new Image();
@@ -138,28 +131,16 @@ export function usePassportWorkflow() {
       const keyRgb = await sampleCornerBackgroundColor(dataUrl);
       dispatch({
         type: 'SET_BG_CONFIG',
-        payload: { type: 'ai_removed', keyColor: keyRgb, isEnabled: true, tolerance: 40, feather: 6 },
+        payload: { type: 'solid', keyColor: keyRgb, isEnabled: false, tolerance: 38, feather: 4 },
       });
     } catch (e) {
       console.warn('[Auto BG Sample]', e);
     }
 
-    dispatch({
-      type: 'UPSERT_TRAY_ITEM',
-      payload: {
-        name,
-        croppedUrl: dataUrl,
-        templateId: state.selectedTemplateId || 'bd_pp',
-        widthMm: 40,
-        heightMm: 50,
-        defaultCopies: 4,
-      },
-    });
-
     dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'crop' });
-    showToast('Background auto-removed! Crop step active.', 'success');
+    showToast('Photo pasted! Crop step active.', 'info');
     triggerFaceDetectionRef.current(dataUrl, img.naturalWidth, img.naturalHeight);
-  }, [dispatch, showToast, state.selectedTemplateId]);
+  }, [dispatch, showToast]);
 
   // ── Recalculate smart crop when template changes ──────────────────────
   const prevTemplateRef = useRef(state.selectedTemplateId);
@@ -172,14 +153,12 @@ export function usePassportWorkflow() {
     }
   }, [state.selectedTemplateId, state.originalImage, state.imageNaturalWidth, state.imageNaturalHeight, triggerFaceDetection]);
 
-  // ── Step 3: Chroma Key Background Removal (debounced) ─────────────────────
-  // NOTE: Does NOT re-run when changing background preset color (state.bgConfig.color)
-  // or when background has already been AI-removed.
+  // ── Step 3: Background Removal Trigger on Config Changes ───────────────────
   useEffect(() => {
-    const activeImg = state.croppedImage || state.originalImage;
-    if (!activeImg || !state.bgConfig.isEnabled || state.bgConfig.type === 'ai_removed') {
-      if (!state.bgConfig.isEnabled && activeImg) {
-        dispatch({ type: 'SET_PROCESSED_IMAGE', payload: activeImg });
+    const rawImg = state.originalImage;
+    if (!rawImg || !state.bgConfig.isEnabled) {
+      if (!state.bgConfig.isEnabled && rawImg) {
+        dispatch({ type: 'SET_PROCESSED_IMAGE', payload: rawImg });
       }
       return;
     }
@@ -187,8 +166,14 @@ export function usePassportWorkflow() {
     if (bgDebounce.current) clearTimeout(bgDebounce.current);
     bgDebounce.current = setTimeout(async () => {
       try {
-        dispatch({ type: 'SET_PROCESSING', payload: { isProcessing: true, message: '✨ De-Fringing Chroma Key…' } });
-        const result = await applyChromaKey(activeImg, state.bgConfig, state.faceDetection);
+        dispatch({ type: 'SET_PROCESSING', payload: { isProcessing: true, message: '✨ Removing Background…' } });
+        const result = await removeBackgroundClassical(rawImg, {
+          tolerance: state.bgConfig.tolerance,
+          keyColor: state.bgConfig.keyColor,
+          edgeRadius: Math.max(1, Math.min(5, Math.round(state.bgConfig.feather / 2))),
+          edgeQuality: 'high',
+          faceDetection: state.faceDetection
+        });
         dispatch({ type: 'SET_PROCESSED_IMAGE', payload: result });
       } catch (e) {
         console.warn('[BG Removal]', e);
@@ -203,11 +188,9 @@ export function usePassportWorkflow() {
   }, [
     state.originalImage,
     state.bgConfig.isEnabled,
-    state.bgConfig.type,
     state.bgConfig.keyColor,
     state.bgConfig.tolerance,
     state.bgConfig.feather,
-    // state.bgConfig.color intentionally excluded so preset color selection is instant!
   ]);
 
   // ── Paste from Clipboard ─────────────────────────────────────────────────

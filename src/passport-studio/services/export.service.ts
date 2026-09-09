@@ -67,9 +67,9 @@ export async function exportPDF(
   const pageHeightPt = mmToPt(paperHMm);
   const page = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
 
-  const itemsToExport = (sharedLayoutState.items && sharedLayoutState.items.length > 0)
+  const itemsToExport = Array.isArray(sharedLayoutState.items)
     ? sharedLayoutState.items
-    : layout.placed.map((place, idx) => ({
+    : (imageDataUrl ? layout.placed.map((place, idx) => ({
         id: `single_${idx}`,
         url: imageDataUrl,
         name: template.name,
@@ -78,7 +78,7 @@ export async function exportPDF(
         widthMm: place.widthMm,
         heightMm: place.heightMm,
         rotateDegrees: layoutConfig.rotatePhotoDegrees || 0,
-      }));
+      })) : []);
 
   // Cache embedded PDF images for unique URLs
   const imageEmbedCache = new Map<string, any>();
@@ -191,8 +191,149 @@ export async function exportPDF(
 // ── Printable Sheet (PrintHub Custom Print System) ───────────────────────────
 
 /**
- * Open a 100% crisp, high-DPI print window using exact CSS millimeter layout
- * and high-resolution photo sources.
+ * Render a complete passport print sheet as a high-resolution 300 DPI Canvas.
+ * Computes exact millimeter positions, loads photos at original resolution,
+ * renders backgrounds, and draws dashed cutlines & alignment crosshairs.
+ */
+export async function renderPassportSheetCanvas300Dpi(
+  imageDataUrl: string,
+  template: PassportTemplate,
+  layoutConfig: LayoutConfig,
+  bgColor = '#ffffff'
+): Promise<HTMLCanvasElement> {
+  const { sharedLayoutState } = await import('../utils/shared-layout-state');
+  const layout = calculateLayout(template, layoutConfig);
+
+  const paperWMm = sharedLayoutState.paperWMm || layout.paperWidthMm;
+  const paperHMm = sharedLayoutState.paperHMm || layout.paperHeightMm;
+
+  const dpi = 300;
+  const mmToPxCalc = (mm: number) => Math.round((mm / 25.4) * dpi);
+
+  const sheetW = mmToPxCalc(paperWMm);
+  const sheetH = mmToPxCalc(paperHMm);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = sheetW;
+  canvas.height = sheetH;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) return canvas;
+
+  // Fill pure white paper background
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, sheetW, sheetH);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const itemsToPrint = Array.isArray(sharedLayoutState.items)
+    ? sharedLayoutState.items
+    : (imageDataUrl ? layout.placed.map((place, idx) => ({
+        id: `single_${idx}`,
+        url: imageDataUrl,
+        name: template.name,
+        xMm: place.xMm,
+        yMm: place.yMm,
+        widthMm: place.widthMm,
+        heightMm: place.heightMm,
+        rotateDegrees: layoutConfig.rotatePhotoDegrees || 0,
+      })) : []);
+
+  // Cache loaded images
+  const imageMap = new Map<string, HTMLImageElement>();
+  for (const item of itemsToPrint) {
+    if (!imageMap.has(item.url)) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve) => {
+        img.onload = () => {
+          imageMap.set(item.url, img);
+          resolve();
+        };
+        img.onerror = () => {
+          resolve();
+        };
+        img.src = item.url;
+      });
+    }
+  }
+
+  const offsetMm = layoutConfig.cutlineOffsetMm ?? 0;
+  const extMm = layoutConfig.cutlineExtensionMm ?? 0;
+  const offsetPx = mmToPxCalc(offsetMm);
+  const extPx = mmToPxCalc(extMm);
+
+  for (const item of itemsToPrint) {
+    const x = mmToPxCalc(item.xMm);
+    const y = mmToPxCalc(item.yMm);
+    const w = mmToPxCalc(item.widthMm);
+    const h = mmToPxCalc(item.heightMm);
+
+    // 1. Background fill for photo box
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(x, y, w, h);
+
+    // 2. Draw photo
+    const img = imageMap.get(item.url);
+    if (img) {
+      if (item.rotateDegrees === 90) {
+        ctx.save();
+        ctx.translate(x + w / 2, y + h / 2);
+        ctx.rotate((90 * Math.PI) / 180);
+        ctx.drawImage(img, -h / 2, -w / 2, h, w);
+        ctx.restore();
+      } else {
+        ctx.drawImage(img, x, y, w, h);
+      }
+    }
+
+    // 3. Optional Photo Border
+    if (layoutConfig.showPhotoBorder && (layoutConfig.photoBorderMm ?? 1.2) > 0) {
+      const borderPx = Math.max(1, mmToPxCalc(layoutConfig.photoBorderMm ?? 1.2));
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = borderPx;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    // 4. Dashed Cut lines & Corner Crosshairs
+    if (layoutConfig.showCutlines) {
+      const cutX = x - offsetPx;
+      const cutY = y - offsetPx;
+      const cutW = w + 2 * offsetPx;
+      const cutH = h + 2 * offsetPx;
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.lineWidth = Math.max(1, Math.round(dpi / 300));
+      ctx.setLineDash([Math.round(dpi * 0.012), Math.round(dpi * 0.012)]); // 3.6px dashes
+      ctx.strokeRect(cutX, cutY, cutW, cutH);
+      ctx.setLineDash([]);
+
+      // Crosshair Extensions
+      if (extPx > 0) {
+        ctx.beginPath();
+        // Top-Left
+        ctx.moveTo(cutX - extPx, cutY); ctx.lineTo(cutX, cutY);
+        ctx.moveTo(cutX, cutY - extPx); ctx.lineTo(cutX, cutY);
+        // Top-Right
+        ctx.moveTo(cutW + cutX, cutY); ctx.lineTo(cutW + cutX + extPx, cutY);
+        ctx.moveTo(cutW + cutX, cutY - extPx); ctx.lineTo(cutW + cutX, cutY);
+        // Bottom-Left
+        ctx.moveTo(cutX - extPx, cutH + cutY); ctx.lineTo(cutX, cutH + cutY);
+        ctx.moveTo(cutX, cutH + cutY); ctx.lineTo(cutX, cutH + cutY + extPx);
+        // Bottom-Right
+        ctx.moveTo(cutW + cutX, cutH + cutY); ctx.lineTo(cutW + cutX + extPx, cutH + cutY);
+        ctx.moveTo(cutW + cutX, cutH + cutY); ctx.lineTo(cutW + cutX, cutH + cutY + extPx);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  return canvas;
+}
+
+/**
+ * Open a 100% crisp, 300 DPI high-resolution print window using exact millimeter layout.
  */
 export async function printPassportSheet(
   imageDataUrl: string,
@@ -202,125 +343,41 @@ export async function printPassportSheet(
 ): Promise<void> {
   const { sharedLayoutState } = await import('../utils/shared-layout-state');
   const layout = calculateLayout(template, layoutConfig);
-  const mm = (v: number) => `${v}mm`;
 
   const paperWMm = sharedLayoutState.paperWMm || layout.paperWidthMm;
   const paperHMm = sharedLayoutState.paperHMm || layout.paperHeightMm;
-  const paperWStr = mm(paperWMm);
-  const paperHStr = mm(paperHMm);
+  const isLandscape = paperWMm > paperHMm;
 
-  const itemsToPrint = (sharedLayoutState.items && sharedLayoutState.items.length > 0)
-    ? sharedLayoutState.items
-    : layout.placed.map((place, idx) => ({
-        id: `single_${idx}`,
-        url: imageDataUrl,
-        name: template.name,
-        xMm: place.xMm,
-        yMm: place.yMm,
-        widthMm: place.widthMm,
-        heightMm: place.heightMm,
-        rotateDegrees: layoutConfig.rotatePhotoDegrees || 0,
-      }));
-
-  const offsetMm = layoutConfig.cutlineOffsetMm ?? 0;
-  const extMm = layoutConfig.cutlineExtensionMm ?? 0;
-
-  let photosHtml = '';
-  for (const item of itemsToPrint) {
-    const isRotated = item.rotateDegrees === 90;
-
-    const imgStyle = isRotated
-      ? `position: absolute; left: 50%; top: 50%; width: ${mm(item.heightMm)}; height: ${mm(item.widthMm)}; transform: translate(-50%, -50%) rotate(90deg); object-fit: cover;`
-      : `width: 100%; height: 100%; object-fit: cover; display: block;`;
-
-    // Dashed cutline box & Corner crosshairs in HTML/CSS
-    const cutlineHtml = layoutConfig.showCutlines ? `
-      <div style="
-        position: absolute;
-        left: -${offsetMm}mm;
-        top: -${offsetMm}mm;
-        width: ${item.widthMm + 2 * offsetMm}mm;
-        height: ${item.heightMm + 2 * offsetMm}mm;
-        border: 1px dashed rgba(0,0,0,0.45);
-        pointer-events: none;
-        box-sizing: border-box;
-      ">
-        ${extMm > 0 ? `
-          <div style="position: absolute; left: -${extMm}mm; top: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; left: -1px; top: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; right: -${extMm}mm; top: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; right: -1px; top: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; left: -${extMm}mm; bottom: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; left: -1px; bottom: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; right: -${extMm}mm; bottom: -1px; width: ${extMm}mm; height: 1px; background: rgba(0,0,0,0.55);"></div>
-          <div style="position: absolute; right: -1px; bottom: -${extMm}mm; width: 1px; height: ${extMm}mm; background: rgba(0,0,0,0.55);"></div>
-        ` : ''}
-      </div>
-    ` : '';
-
-    photosHtml += `
-      <div style="
-        position: absolute;
-        left: ${mm(item.xMm)};
-        top: ${mm(item.yMm)};
-        width: ${mm(item.widthMm)};
-        height: ${mm(item.heightMm)};
-        background: ${bgColor};
-        box-sizing: border-box;
-      ">
-        ${cutlineHtml}
-        <div style="width: 100%; height: 100%; overflow: hidden; position: relative;">
-          <img src="${item.url}" style="${imgStyle}" />
-        </div>
-      </div>`;
+  // Determine standard paper size key ('A4', '4R', 'Legal', 'A5')
+  let paperSizeKey: 'A4' | '4R' | 'Legal' | 'A5' | 'Custom' = 'A4';
+  const paperId = (layoutConfig.paperSize?.id || '').toLowerCase();
+  const paperName = (layoutConfig.paperSize?.name || '').toLowerCase();
+  if (paperId.includes('4r') || paperName.includes('4r') || paperWMm < 120) {
+    paperSizeKey = '4R';
+  } else if (paperId.includes('legal') || paperName.includes('legal') || paperHMm > 330) {
+    paperSizeKey = 'Legal';
+  } else if (paperId.includes('a5') || paperName.includes('a5')) {
+    paperSizeKey = 'A5';
+  } else {
+    paperSizeKey = 'A4';
   }
 
-  const printHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>Passport Photo Print — ${template.name}</title>
-      <style>
-        @page {
-          margin: 0;
-          size: ${paperWStr} ${paperHStr};
-        }
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        html, body {
-          width: ${paperWStr};
-          height: ${paperHStr};
-          overflow: hidden;
-          background: #ffffff;
-        }
-        .sheet {
-          position: relative;
-          width: ${paperWStr};
-          height: ${paperHStr};
-          background: #ffffff;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="sheet">${photosHtml}</div>
-    </body>
-    </html>`;
+  // Render true 300 DPI high-resolution canvas sheet
+  const highResCanvas = await renderPassportSheetCanvas300Dpi(
+    imageDataUrl,
+    template,
+    layoutConfig,
+    bgColor
+  );
 
   // Open Custom Professional Print System Window with the passport photo print layout
   if (typeof window !== 'undefined') {
-    const { sharedPrintCanvasRef } = await import('../utils/shared-canvas-ref');
-    const sourceCanvas = sharedPrintCanvasRef.current;
-    
     window.dispatchEvent(new CustomEvent('printhub:open-custom-print', {
       detail: {
-        source: sourceCanvas ? sourceCanvas.toDataURL('image/png', 1.0) : null,
-        title: `Passport_${template.country}_${template.widthMm}x${template.heightMm}mm`,
+        source: highResCanvas.toDataURL('image/png', 1.0),
+        title: `Passport_PrintSheet_${template.country || 'Custom'}_${template.widthMm}x${template.heightMm}mm`,
+        paperSize: paperSizeKey,
+        orientation: isLandscape ? 'landscape' : 'portrait',
       }
     }));
   }

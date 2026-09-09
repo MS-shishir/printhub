@@ -60,17 +60,57 @@ function PassportStudioInner({ onAddRecentFile }: PassportStudioProps) {
       }
     };
 
+    const handleTriggerPassportPrint = async () => {
+      const defaultImage = state.croppedImage || state.processedImage || state.originalImage;
+      if (defaultImage) {
+        const { getTemplate } = await import('../services/template.service');
+        const { printPassportSheet } = await import('../services/export.service');
+        const defaultTemplate = getTemplate(state.selectedTemplateId, state.customWidth, state.customHeight);
+        printPassportSheet(defaultImage, defaultTemplate, state.layoutConfig, state.bgConfig.color);
+      } else {
+        dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'export' });
+      }
+    };
+
+    const handlePassportAction = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      const action = customEvt.detail?.action;
+      if (!action) return;
+
+      if (action === 'crop') {
+        dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'crop' });
+      } else if (action === 'bg-remove') {
+        dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'compliance' });
+      } else if (action === 'export' || action === 'pdf') {
+        dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'export' });
+      } else if (action === 'duplicate' || action === 'layout') {
+        dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'layout' });
+      } else if (action === 'fit' || action === 'view') {
+        editorRef.current?.fitToCanvas();
+      } else if (action === 'delete') {
+        dispatch({ type: 'RESET' });
+        dispatch({
+          type: 'ADD_TOAST',
+          payload: { id: Date.now().toString(), type: 'info', message: 'ছবি মুছে ফেলা হয়েছে' },
+        });
+      }
+    };
+
     document.addEventListener('keydown', handleKeyboard);
     document.addEventListener('paste', handlePaste as EventListener);
     window.addEventListener('printhub:open-passport-export', handleOpenExport);
+    window.addEventListener('printhub:trigger-passport-print', handleTriggerPassportPrint);
     window.addEventListener('printhub:load-passport-photo', handleLoadPassportPhoto);
+    window.addEventListener('printhub:passport-action', handlePassportAction);
     return () => {
       document.removeEventListener('keydown', handleKeyboard);
       document.removeEventListener('paste', handlePaste as EventListener);
       window.removeEventListener('printhub:open-passport-export', handleOpenExport);
+      window.removeEventListener('printhub:trigger-passport-print', handleTriggerPassportPrint);
       window.removeEventListener('printhub:load-passport-photo', handleLoadPassportPhoto);
+      window.removeEventListener('printhub:passport-action', handlePassportAction);
     };
-  }, [handleKeyboard, handlePaste, dispatch, loadImageFromDataUrl]);
+  }, [handleKeyboard, handlePaste, dispatch, loadImageFromDataUrl, state]);
 
   // Report new files to parent
   useEffect(() => {

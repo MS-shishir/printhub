@@ -179,20 +179,6 @@ export default function TemplatePanel({ onGetCroppedUrl }: TemplatePanelProps) {
       type: 'SET_TEMPLATE',
       payload: { templateId: 'custom', customWidth: w, customHeight: h },
     });
-    const currentCrop = onGetCroppedUrl?.() || state.croppedImage || state.processedImage || state.originalImage;
-    if (currentCrop) {
-      dispatch({
-        type: 'UPSERT_TRAY_ITEM',
-        payload: {
-          name: state.photoName || 'Processed Photo',
-          croppedUrl: currentCrop,
-          templateId: 'custom',
-          widthMm: w,
-          heightMm: h,
-          defaultCopies: 4,
-        },
-      });
-    }
   };
 
   const handleCutToTemplate = async () => {
@@ -220,10 +206,13 @@ export default function TemplatePanel({ onGetCroppedUrl }: TemplatePanelProps) {
     const activeW = selected === 'custom' ? state.customWidth : currentTemplate.widthMm;
     const activeH = selected === 'custom' ? state.customHeight : currentTemplate.heightMm;
 
+    const baseName = state.photoName ? state.photoName.replace(/\.[^/.]+$/, "") : 'Photo';
+    const itemName = `${baseName} (${currentTemplate.name})`;
+
     dispatch({
       type: 'UPSERT_TRAY_ITEM',
       payload: {
-        name: state.photoName || 'Processed Photo',
+        name: itemName,
         croppedUrl: finalUrl,
         templateId: selected,
         widthMm: activeW,
@@ -416,20 +405,6 @@ export default function TemplatePanel({ onGetCroppedUrl }: TemplatePanelProps) {
                 key={tpl.id}
                 onClick={() => {
                   dispatch({ type: 'SET_TEMPLATE', payload: { templateId: tpl.id } });
-                  const currentCrop = onGetCroppedUrl?.() || state.croppedImage || state.processedImage || state.originalImage;
-                  if (currentCrop) {
-                    dispatch({
-                      type: 'UPSERT_TRAY_ITEM',
-                      payload: {
-                        name: state.photoName || 'Processed Photo',
-                        croppedUrl: currentCrop,
-                        templateId: tpl.id,
-                        widthMm: tpl.widthMm,
-                        heightMm: tpl.heightMm,
-                        defaultCopies: 4,
-                      },
-                    });
-                  }
                 }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all border ${
                   isActive

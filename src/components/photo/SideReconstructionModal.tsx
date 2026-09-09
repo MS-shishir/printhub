@@ -16,11 +16,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, Check, RotateCcw, Sliders, Eye, Undo2, Redo2, FlipHorizontal, 
   Sparkles, ZoomIn, ZoomOut, Move, Scissors, Layers, HelpCircle,
-  Brush, Copy, Wand2, RefreshCw, ChevronDown, ChevronUp, Lock, ArrowLeftRight
+  Brush, Copy, Wand2, RefreshCw, ChevronDown, ChevronUp, Lock, ArrowLeftRight,
+  Eraser, User, ShieldCheck
 } from 'lucide-react';
 import { 
   SideReconstructionEngine, 
   GeometricReconstructionConfig, 
+  TargetReconstructionZone,
   MultiZoneConfig,
   WarpStroke,
   DEFAULT_RECONSTRUCTION_CONFIG,
@@ -163,12 +165,6 @@ export default function SideReconstructionModal({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Make canvas matching original dimensions
-    if (canvas.width !== original.width || canvas.height !== original.height) {
-      canvas.width = original.width;
-      canvas.height = original.height;
-    }
-
     // Step 1: Base Geometric Reconstruction
     let reconstructed = SideReconstructionEngine.applyGeometricReconstruction(original, config);
     baseReconSnapshotRef.current = reconstructed;
@@ -178,6 +174,12 @@ export default function SideReconstructionModal({
       reconstructed = SideReconstructionEngine.applyWarpDeformation(reconstructed, warpStrokes);
     }
     workingCanvasRef.current = reconstructed;
+
+    // Make display canvas match reconstructed dimensions
+    if (canvas.width !== reconstructed.width || canvas.height !== reconstructed.height) {
+      canvas.width = reconstructed.width;
+      canvas.height = reconstructed.height;
+    }
 
     // Step 3: Draw to display canvas based on View Mode
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -222,10 +224,14 @@ export default function SideReconstructionModal({
     // Step 4: Draw Center Axis Overlay if in Axis edit mode or none
     if (activeBrush === 'none' && viewMode !== 'original') {
       ctx.save();
-      const topX = SideReconstructionEngine.getAxisXAtY(config.axis, 0, canvas.height);
-      const bottomX = SideReconstructionEngine.getAxisXAtY(config.axis, canvas.height, canvas.height);
+      const isLtoR = config.side === 'left_to_right';
+      const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
+      const displayCx = config.axis.cx + padLeft;
+
+      const topX = SideReconstructionEngine.getAxisXAtY({ ...config.axis, cx: displayCx }, 0, canvas.height);
+      const bottomX = SideReconstructionEngine.getAxisXAtY({ ...config.axis, cx: displayCx }, canvas.height, canvas.height);
       const midY = canvas.height / 2;
-      const midX = config.axis.cx;
+      const midX = displayCx;
 
       // Axis Line
       ctx.strokeStyle = '#6366f1';
@@ -260,9 +266,51 @@ export default function SideReconstructionModal({
       ctx.fill();
       ctx.stroke();
 
+      // Draw helper pill badge on the axis line
+      const badgeText = language === 'bn' ? 'নাকের মাঝখানে রাখুন (Face Midline)' : 'Align with Nose Midline';
+      ctx.font = `bold ${Math.max(10, Math.round(11 / zoomLevel))}px system-ui, sans-serif`;
+      const textMetrics = ctx.measureText(badgeText);
+      const badgeW = textMetrics.width + 16 / zoomLevel;
+      const badgeH = 22 / zoomLevel;
+      const badgeX = Math.max(10, Math.min(canvas.width - badgeW - 10, midX - badgeW / 2));
+      const badgeY = midY - 26 / zoomLevel;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 1.5 / zoomLevel;
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6 / zoomLevel);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#c7d2fe';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + badgeH / 2);
+
+      // Draw directional flow indicator (Source -> Target)
+      const flowText = isLtoR 
+        ? (language === 'bn' ? 'বাম কাঁধ (ভালো) ➔ ডানে মেরামত' : 'Left (Good) ➔ Repair Right')
+        : (language === 'bn' ? 'ডান কাঁধ (ভালো) ➔ বামে মেরামত' : 'Right (Good) ➔ Repair Left');
+      
+      const flowBadgeW = ctx.measureText(flowText).width + 16 / zoomLevel;
+      const flowBadgeX = Math.max(10, Math.min(canvas.width - flowBadgeW - 10, midX - flowBadgeW / 2));
+      const flowBadgeY = midY + 16 / zoomLevel;
+
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 1 / zoomLevel;
+      ctx.beginPath();
+      ctx.roundRect(flowBadgeX, flowBadgeY, flowBadgeW, badgeH, 6 / zoomLevel);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#6ee7b7';
+      ctx.fillText(flowText, flowBadgeX + flowBadgeW / 2, flowBadgeY + badgeH / 2);
+
       ctx.restore();
     }
-  }, [config, warpStrokes, viewMode, splitRatio, zoomLevel, activeBrush]);
+  }, [config, warpStrokes, viewMode, splitRatio, zoomLevel, activeBrush, language]);
 
   useEffect(() => {
     renderReconstruction();
@@ -301,9 +349,12 @@ export default function SideReconstructionModal({
     }
 
     if (activeBrush === 'none') {
+      const isLtoR = config.side === 'left_to_right';
+      const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
+      const displayCx = config.axis.cx + padLeft;
       const midY = canvas.height / 2;
-      const topX = SideReconstructionEngine.getAxisXAtY(config.axis, 0, canvas.height);
-      const distToCenter = Math.sqrt((x - config.axis.cx) ** 2 + (y - midY) ** 2);
+      const topX = SideReconstructionEngine.getAxisXAtY({ ...config.axis, cx: displayCx }, 0, canvas.height);
+      const distToCenter = Math.sqrt((x - displayCx) ** 2 + (y - midY) ** 2);
       const distToTop = Math.sqrt((x - topX) ** 2 + (y - 30 / zoomLevel) ** 2);
 
       if (distToTop < 20 / zoomLevel) {
@@ -311,7 +362,7 @@ export default function SideReconstructionModal({
         return;
       }
 
-      if (distToCenter < 25 / zoomLevel || Math.abs(x - config.axis.cx) < 12 / zoomLevel) {
+      if (distToCenter < 25 / zoomLevel || Math.abs(x - displayCx) < 14 / zoomLevel) {
         isDraggingAxisRef.current = true;
         return;
       }
@@ -321,7 +372,10 @@ export default function SideReconstructionModal({
       brushStartPosRef.current = { x, y };
 
       if (activeBrush === 'mirror_stamp' && originalSnapshotRef.current && workingCanvasRef.current) {
-        const cxAtY = SideReconstructionEngine.getAxisXAtY(config.axis, y, canvas.height);
+        const isLtoR = config.side === 'left_to_right';
+        const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
+        const displayCx = config.axis.cx + padLeft;
+        const cxAtY = SideReconstructionEngine.getAxisXAtY({ ...config.axis, cx: displayCx }, y, canvas.height);
         const sourceX = config.side === 'left_to_right' ? cxAtY - (x - cxAtY) : cxAtY + (cxAtY - x);
         SideReconstructionEngine.applyMirrorCloneStamp(workingCanvasRef.current, {
           sourceX,
@@ -337,13 +391,16 @@ export default function SideReconstructionModal({
         SideReconstructionEngine.applyHealingPatch(workingCanvasRef.current, x, y, brushSize, brushStrength);
         renderReconstruction();
       } else if (activeBrush === 'soft_eraser' && workingCanvasRef.current && originalSnapshotRef.current) {
+        const isLtoR = config.side === 'left_to_right';
+        const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
         SideReconstructionEngine.applySoftEraser(
           workingCanvasRef.current,
           originalSnapshotRef.current,
           x,
           y,
           brushSize,
-          brushStrength
+          brushStrength,
+          padLeft
         );
         renderReconstruction();
       }
@@ -363,7 +420,11 @@ export default function SideReconstructionModal({
     }
 
     if (isDraggingAxisRef.current) {
-      const newCx = Math.max(20, Math.min(canvas.width - 20, Math.round(x)));
+      const isLtoR = config.side === 'left_to_right';
+      const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
+      const origX = x - padLeft;
+      const maxCx = originalSnapshotRef.current ? originalSnapshotRef.current.width - 10 : 800;
+      const newCx = Math.max(10, Math.min(maxCx, Math.round(origX)));
       setConfig((prev) => ({
         ...prev,
         axis: { ...prev.axis, cx: newCx },
@@ -372,8 +433,11 @@ export default function SideReconstructionModal({
     }
 
     if (isDraggingAngleRef.current) {
+      const isLtoR = config.side === 'left_to_right';
+      const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
+      const displayCx = config.axis.cx + padLeft;
       const midY = canvas.height / 2;
-      const deltaX = x - config.axis.cx;
+      const deltaX = x - displayCx;
       const deltaY = y - midY;
       const angleRad = Math.atan2(deltaX, -deltaY);
       const angleDeg = Math.max(-25, Math.min(25, (angleRad * 180) / Math.PI));
@@ -402,13 +466,16 @@ export default function SideReconstructionModal({
         SideReconstructionEngine.applyHealingPatch(workingCanvasRef.current, x, y, brushSize, brushStrength);
         renderReconstruction();
       } else if (activeBrush === 'soft_eraser' && originalSnapshotRef.current) {
+        const isLtoR = config.side === 'left_to_right';
+        const padLeft = (!isLtoR && (config.padding || 0) > 0) ? (config.padding || 0) : 0;
         SideReconstructionEngine.applySoftEraser(
           workingCanvasRef.current,
           originalSnapshotRef.current,
           x,
           y,
           brushSize,
-          brushStrength
+          brushStrength,
+          padLeft
         );
         renderReconstruction();
       }
@@ -736,23 +803,133 @@ export default function SideReconstructionModal({
             </div>
           </div>
 
+          {/* Selective Target Zone Selector (Part-by-Part Duplication) */}
+          <div className="p-4 border-b border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                {language === 'bn' ? '২. মেরামত করার নির্দিষ্ট অংশ' : '2. Selective Repair Part'}
+              </label>
+              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" />
+                {language === 'bn' ? 'মুখ অরিজিনাল থাকবে' : 'Original Face Kept'}
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              {(
+                [
+                  {
+                    id: 'shoulder_arm' as TargetReconstructionZone,
+                    titleBn: 'শুধু কাঁধ ও হাত (Shoulder & Arm)',
+                    titleEn: 'Shoulder & Arm Only',
+                    descBn: 'মুখ, চোখ ও মাথার কোনো পরিবর্তন হবে না (১০০% আসল থাকবে)',
+                    descEn: 'Preserves 100% original face & head, clones only missing sleeve',
+                    recommended: true,
+                  },
+                  {
+                    id: 'hair_head' as TargetReconstructionZone,
+                    titleBn: 'শুধু চুল ও মাথা (Hair & Head)',
+                    titleEn: 'Hair & Head Only',
+                    descBn: 'মাথার চুল বা ওপরের কাটা অংশ মেরামত করবে',
+                    descEn: 'Repairs missing hair/head top',
+                    recommended: false,
+                  },
+                  {
+                    id: 'face_jaw' as TargetReconstructionZone,
+                    titleBn: 'শুধু মুখ ও চোয়াল (Face & Jaw)',
+                    titleEn: 'Face & Jaw Only',
+                    descBn: 'মুখের গাল ও চোয়ালের অংশ মেরামত করবে',
+                    descEn: 'Repairs cheek & jaw side only',
+                    recommended: false,
+                  },
+                  {
+                    id: 'ear' as TargetReconstructionZone,
+                    titleBn: 'শুধু কান (Ear Only)',
+                    titleEn: 'Ear Only',
+                    descBn: 'কানের কাটা অংশ মেরামত করবে',
+                    descEn: 'Clones missing ear only',
+                    recommended: false,
+                  },
+                  {
+                    id: 'all' as TargetReconstructionZone,
+                    titleBn: 'পুরো ছবি / ফুল মিরর (Full Mirror)',
+                    titleEn: 'Full Mirror (All Parts)',
+                    descBn: 'মাথা থেকে কাঁধ পর্যন্ত পুরোটা ডুপ্লিকেট করবে',
+                    descEn: 'Mirrors full head, face and shoulders',
+                    recommended: false,
+                  },
+                ]
+              ).map((zoneItem) => {
+                const isSelected = (config.targetZone || 'shoulder_arm') === zoneItem.id;
+                return (
+                  <button
+                    key={zoneItem.id}
+                    onClick={() => {
+                      const nextConfig: GeometricReconstructionConfig = { ...config, targetZone: zoneItem.id };
+                      setConfig(nextConfig);
+                      pushHistory({ config: nextConfig, warpStrokes });
+                    }}
+                    className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col gap-0.5 ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-indigo-950/80 to-indigo-900/60 text-white border-indigo-400 shadow-md shadow-indigo-600/20'
+                        : 'bg-slate-950/50 text-slate-400 border-slate-800/80 hover:bg-slate-800/60 hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            isSelected ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-slate-600'
+                          }`}
+                        />
+                        <span className="text-xs font-bold text-slate-200">
+                          {language === 'bn' ? zoneItem.titleBn : zoneItem.titleEn}
+                        </span>
+                      </div>
+                      {zoneItem.recommended && (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          {language === 'bn' ? 'প্রস্তাবিত' : 'Recommended'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 pl-3.5 leading-snug">
+                      {language === 'bn' ? zoneItem.descBn : zoneItem.descEn}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Center Axis & Tilt Angle Alignment */}
           <div className="p-4 border-b border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                {language === 'bn' ? '২. সেন্টার এক্সিস ও কোণ' : '2. Center Axis & Tilt'}
+                {language === 'bn' ? '৩. সেন্টার এক্সিস ও কোণ' : '3. Center Axis & Tilt'}
               </label>
               <button
                 onClick={() => {
                   if (!originalSnapshotRef.current) return;
                   const auto = SideReconstructionEngine.autoDetectCenterAxis(originalSnapshotRef.current);
-                  setConfig((prev) => ({ ...prev, axis: auto }));
+                  const nextConfig = { ...config, axis: auto };
+                  setConfig(nextConfig);
+                  pushHistory({ config: nextConfig, warpStrokes });
                 }}
-                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-all cursor-pointer"
               >
                 <Sparkles className="w-3 h-3" />
-                <span>{language === 'bn' ? 'অটো সেন্টার' : 'Auto Center'}</span>
+                <span>{language === 'bn' ? 'অটো ফেস সেন্টার' : 'Auto Center'}</span>
               </button>
+            </div>
+
+            {/* Visual Guidance Banner */}
+            <div className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-[11px] text-indigo-200 leading-relaxed flex items-start gap-2">
+              <HelpCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+              <span>
+                {language === 'bn'
+                  ? 'সেন্টার লাইনটি (নীল ড্যাশ) ফেসের ঠিক মাঝখানে (নাক/চিবুক বরাবর) রাখুন। কাটা অংশের দিকে টানবেন না।'
+                  : 'Align the Center Line along the nose/chin midline. Do not drag it to the missing edge.'}
+              </span>
             </div>
 
             <div>
@@ -762,8 +939,8 @@ export default function SideReconstructionModal({
               </div>
               <input
                 type="range"
-                min="50"
-                max={originalSnapshotRef.current ? originalSnapshotRef.current.width - 50 : 800}
+                min="10"
+                max={originalSnapshotRef.current ? originalSnapshotRef.current.width - 10 : 800}
                 value={config.axis.cx}
                 onChange={(e) => {
                   setConfig((prev) => ({
@@ -802,7 +979,7 @@ export default function SideReconstructionModal({
           {/* Master Geometric Controls */}
           <div className="p-4 border-b border-slate-800 space-y-3">
             <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block">
-              {language === 'bn' ? '৩. মাস্টার জ্যামিতিক স্কেল ও ব্লেন্ডিং' : '3. Geometric Scaling & Blending'}
+              {language === 'bn' ? '৪. মাস্টার জ্যামিতিক স্কেল ও ব্লেন্ডিং' : '4. Geometric Scaling & Blending'}
             </label>
 
             <div>
@@ -821,6 +998,25 @@ export default function SideReconstructionModal({
                 }}
                 onMouseUp={() => pushHistory({ config, warpStrokes })}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs font-semibold mb-1">
+                <span className="text-slate-300">{language === 'bn' ? 'অতিরিক্ত হাত/কাঁধের জায়গা (Extra Space)' : 'Extra Shoulder Space'}</span>
+                <span className="font-mono text-sky-300">+{config.padding ?? 60} px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="180"
+                step="5"
+                value={config.padding ?? 60}
+                onChange={(e) => {
+                  setConfig((prev) => ({ ...prev, padding: parseInt(e.target.value) }));
+                }}
+                onMouseUp={() => pushHistory({ config, warpStrokes })}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
               />
             </div>
 
@@ -865,7 +1061,7 @@ export default function SideReconstructionModal({
           {/* 4-Zone Specific Breakdown */}
           <div className="p-4 border-b border-slate-800 space-y-3">
             <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block">
-              {language === 'bn' ? '৪. জোন অনুযায়ী সূক্ষ্ম ট্রান্সফর্মেশন' : '4. Multi-Zone Custom Adjustments'}
+              {language === 'bn' ? '৫. জোন অনুযায়ী সূক্ষ্ম ট্রান্সফর্মেশন' : '5. Multi-Zone Custom Adjustments'}
             </label>
 
             {/* Zone Selector Tabs */}
@@ -982,12 +1178,12 @@ export default function SideReconstructionModal({
           {/* Interactive Repair Brushes */}
           <div className="p-4 space-y-3">
             <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block">
-              {language === 'bn' ? '৫. ম্যানুয়াল টাচ-আপ ও রিপেয়ার ব্রাশ' : '5. Manual Touch-up Brushes'}
+              {language === 'bn' ? '৬. ম্যানুয়াল টাচ-আপ ও রিপেয়ার ব্রাশ' : '6. Manual Touch-up Brushes'}
             </label>
 
             <div className="grid grid-cols-2 gap-1.5">
               <button
-                onClick={() => setActiveBrush(activeBrush === 'none' ? 'mirror_stamp' : 'none')}
+                onClick={() => setActiveBrush('none')}
                 className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all cursor-pointer ${
                   activeBrush === 'none'
                     ? 'bg-indigo-600 text-white border-indigo-400 shadow'
@@ -996,7 +1192,7 @@ export default function SideReconstructionModal({
               >
                 <Move className="w-4 h-4" />
                 <span className="text-[10px] font-bold">
-                  {language === 'bn' ? 'এক্সিস মুভ' : 'Axis Alignment'}
+                  {language === 'bn' ? 'এক্সিস মুভ' : 'Move Axis'}
                 </span>
               </button>
 
@@ -1010,7 +1206,21 @@ export default function SideReconstructionModal({
               >
                 <Copy className="w-4 h-4" />
                 <span className="text-[10px] font-bold">
-                  {language === 'bn' ? 'মিরর ক্লোন স্ট্যাম্প' : 'Mirror Stamp'}
+                  {language === 'bn' ? 'মিরর স্ট্যাম্প' : 'Mirror Stamp'}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveBrush(activeBrush === 'soft_eraser' ? 'none' : 'soft_eraser')}
+                className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                  activeBrush === 'soft_eraser'
+                    ? 'bg-indigo-600 text-white border-indigo-400 shadow'
+                    : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800'
+                }`}
+              >
+                <Eraser className="w-4 h-4" />
+                <span className="text-[10px] font-bold">
+                  {language === 'bn' ? 'সফট ইরেজার' : 'Soft Eraser'}
                 </span>
               </button>
 
@@ -1030,7 +1240,7 @@ export default function SideReconstructionModal({
 
               <button
                 onClick={() => setActiveBrush(activeBrush === 'healing_brush' ? 'none' : 'healing_brush')}
-                className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all cursor-pointer col-span-2 ${
                   activeBrush === 'healing_brush'
                     ? 'bg-indigo-600 text-white border-indigo-400 shadow'
                     : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800'
@@ -1038,7 +1248,7 @@ export default function SideReconstructionModal({
               >
                 <Wand2 className="w-4 h-4" />
                 <span className="text-[10px] font-bold">
-                  {language === 'bn' ? 'হিলিং প্যাচ' : 'Healing Patch'}
+                  {language === 'bn' ? 'হিলিং প্যাচ (Texture Blend)' : 'Healing Patch (Texture Blend)'}
                 </span>
               </button>
             </div>

@@ -357,6 +357,10 @@ export class DocumentScanService {
     }
   }
 
+  public deletePage(index: number): void {
+    this.removePage(index);
+  }
+
   public duplicatePage(index: number): void {
     const page = this.pages[index];
     if (!page) return;

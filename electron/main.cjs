@@ -7,6 +7,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { initAutoUpdater } = require('./updater.cjs');
 
 let mainWindow = null;
 let currentScanWatcher = null;
@@ -61,12 +62,11 @@ function createWindow() {
 
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
-  if (isDev && process.env.ELECTRON_START_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_START_URL);
-  } else if (isDev && fs.existsSync(path.join(__dirname, '../dist/index.html'))) {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  } else if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+  if (isDev) {
+    const startUrl = process.env.ELECTRON_START_URL || 'http://localhost:3000';
+    mainWindow.loadURL(startUrl).catch(() => {
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -77,6 +77,13 @@ function createWindow() {
 
   // Start scanner folder watcher
   setupScanFolderWatcher(getInitialScanFolder());
+
+  // Initialize Auto-Update Engine
+  try {
+    initAutoUpdater(mainWindow);
+  } catch (err) {
+    console.warn('Auto-updater initialization warning:', err);
+  }
 }
 
 // ── Scanner Folder Watcher ───────────────────────────────────────────────────
@@ -190,8 +197,6 @@ ipcMain.handle('printhub:print-direct', async (_event, options = {}) => {
       color = true,
       duplexMode = 'simplex',
       silent = true,
-      scaleFactor = 100,
-      dpi = { horizontal: 300, vertical: 300 },
     } = options;
 
     const isLand = Boolean(landscape);
@@ -209,47 +214,40 @@ ipcMain.handle('printhub:print-direct', async (_event, options = {}) => {
         <style>
           @page {
             size: ${pw} ${ph};
-            margin: 0;
+            margin: 0mm !important;
           }
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+          *, *:before, *:after {
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            box-sizing: border-box !important;
           }
           html, body {
-            width: ${pw};
-            height: ${ph};
-            margin: 0;
-            padding: 0;
-            background: #ffffff;
-            overflow: hidden;
+            width: ${pw} !important;
+            height: ${ph} !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            overflow: hidden !important;
           }
-          .sheet-box {
-            position: relative;
-            width: ${pw};
-            height: ${ph};
-            background: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          img {
-            width: 100%;
-            height: 100%;
-            object-fit: fill;
-            display: block;
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: high-quality;
+          img#spoolImg {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: ${pw} !important;
+            height: ${ph} !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            object-fit: fill !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
             ${isGrayscale ? 'filter: grayscale(100%) contrast(105%);' : ''}
           }
         </style>
       </head>
       <body>
-        <div class="sheet-box">
-          <img src="${dataUrl}" />
-        </div>
+        <img id="spoolImg" src="${dataUrl}" />
       </body>
       </html>
     ` : null);
@@ -279,44 +277,92 @@ ipcMain.handle('printhub:print-direct', async (_event, options = {}) => {
     if (fullHtml) {
       const printWin = new BrowserWindow({
         show: false,
-        width: 800,
-        height: 1100,
+        width: 1200,
+        height: 1700,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
         },
       });
 
-      await printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`);
+      // Write HTML to temporary file to avoid Chromium data: URL size limit (ERR_INVALID_URL -300)
+      const tempHtmlPath = path.join(
+        app.getPath('temp'),
+        `printhub_print_${Date.now()}_${Math.random().toString(36).slice(2)}.html`
+      );
+
+      try {
+        fs.writeFileSync(tempHtmlPath, fullHtml, 'utf8');
+        await printWin.loadFile(tempHtmlPath);
+      } catch (err) {
+        console.error('Failed to write temp print file:', err);
+        try { printWin.close(); } catch {}
+        return { success: false, error: 'Failed to prepare print file: ' + (err?.message || err) };
+      }
+
+      // Wait for all images to decode and full layout settlement
+      try {
+        await printWin.webContents.executeJavaScript(`
+          new Promise((resolve) => {
+            const imgs = Array.from(document.querySelectorAll('img'));
+            if (imgs.length === 0) return resolve(true);
+            let settled = 0;
+            const checkDone = () => {
+              settled++;
+              if (settled >= imgs.length) resolve(true);
+            };
+            imgs.forEach((img) => {
+              if (img.complete && img.naturalWidth > 0) {
+                if (img.decode) {
+                  img.decode().then(checkDone).catch(checkDone);
+                } else {
+                  checkDone();
+                }
+              } else {
+                img.onload = () => {
+                  if (img.decode) img.decode().then(checkDone).catch(checkDone);
+                  else checkDone();
+                };
+                img.onerror = checkDone;
+              }
+            });
+            setTimeout(resolve, 1500); // Safety timeout
+          })
+        `);
+      } catch (e) {
+        console.warn('Image decode wait warning:', e);
+      }
+
+      await new Promise(r => setTimeout(r, 100));
 
       return new Promise((resolve) => {
-        setTimeout(() => {
-          printWin.webContents.print(
-            {
-              silent: silent !== false, // SILENT = TRUE: Dispatches directly to Windows Spooler with ZERO dialogs
-              printBackground: true,
-              deviceName: deviceName || '',
-              copies: Math.max(1, Math.min(99, copies || 1)),
-              pageSize: normalizedPageSize,
-              landscape: isLand,
-              color: color !== false,
-              duplexMode: duplexSetting,
-              scaleFactor: Math.max(10, Math.min(200, scaleFactor || 100)),
-              dpi: dpi || { horizontal: 300, vertical: 300 },
-              margins: { marginType: 'none' },
-            },
-            (success, failureReason) => {
-              try {
-                printWin.close();
-              } catch {}
-              if (!success) {
-                resolve({ success: false, error: failureReason || 'Failed to spool to printer hardware.' });
-              } else {
-                resolve({ success: true, deviceName: deviceName || 'Default Printer' });
-              }
+        printWin.webContents.print(
+          {
+            silent: silent !== false, // SILENT = TRUE: Direct hardware spool with ZERO OS dialogs
+            printBackground: true,
+            deviceName: deviceName || '',
+            copies: Math.max(1, Math.min(99, copies || 1)),
+            pageSize: normalizedPageSize,
+            landscape: isLand,
+            color: color !== false,
+            duplexMode: duplexSetting,
+            margins: { marginType: 'none' },
+          },
+          (success, failureReason) => {
+            try {
+              printWin.close();
+            } catch {}
+            try {
+              if (fs.existsSync(tempHtmlPath)) fs.unlinkSync(tempHtmlPath);
+            } catch {}
+
+            if (!success) {
+              resolve({ success: false, error: failureReason || 'Failed to spool to printer hardware.' });
+            } else {
+              resolve({ success: true, deviceName: deviceName || 'Default Printer' });
             }
-          );
-        }, 280);
+          }
+        );
       });
     }
 

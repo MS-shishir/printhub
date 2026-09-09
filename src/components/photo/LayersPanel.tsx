@@ -25,7 +25,11 @@ export interface PhotoLayerItem {
 interface LayersPanelProps {
   layers: PhotoLayerItem[];
   activeLayerId: string | null;
+  activeOpacity?: number;
+  activeBlendMode?: string;
   onSelectLayer: (id: string) => void;
+  onOpacityChange?: (opacity: number) => void;
+  onBlendModeChange?: (blendMode: string) => void;
   onToggleVisibility: (id: string) => void;
   onToggleLock: (id: string) => void;
   onMoveUp: (id: string) => void;
@@ -39,7 +43,11 @@ interface LayersPanelProps {
 export default function LayersPanel({
   layers,
   activeLayerId,
+  activeOpacity = 100,
+  activeBlendMode = 'Normal',
   onSelectLayer,
+  onOpacityChange,
+  onBlendModeChange,
   onToggleVisibility,
   onToggleLock,
   onMoveUp,
@@ -50,9 +58,6 @@ export default function LayersPanel({
   language
 }: LayersPanelProps) {
   const [activeTab, setActiveTab] = useState<'layers' | 'history' | 'channels' | 'paths'>('layers');
-  const [blendMode, setBlendMode] = useState<string>('Normal');
-  const [opacityVal, setOpacityVal] = useState<number>(100);
-  const [fillVal, setFillVal] = useState<number>(100);
 
   const historySteps = [
     { id: 'h1', name: 'Open Image', icon: ImageIcon },
@@ -91,14 +96,17 @@ export default function LayersPanel({
       <div className="p-3.5 space-y-3">
         {activeTab === 'layers' && (
           <div className="space-y-3 animate-fadeIn">
-            {/* Blend Mode & Opacity Controls */}
+            {/* Blend Mode & Opacity Controls (Live Bound to Active Layer) */}
             <div className="space-y-2 border-b border-slate-800 pb-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase">Blend Mode</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  {language === 'bn' ? 'ব্লেন্ড মোড' : 'Blend Mode'}
+                </span>
                 <select
-                  value={blendMode}
-                  onChange={(e) => setBlendMode(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 rounded px-2 py-0.5 text-[11px] text-slate-200 font-semibold focus:outline-none focus:border-indigo-500"
+                  value={activeBlendMode}
+                  onChange={(e) => onBlendModeChange?.(e.target.value)}
+                  disabled={!activeLayerId}
+                  className="bg-slate-950 border border-slate-700 rounded px-2 py-0.5 text-[11px] text-slate-200 font-semibold focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                 >
                   <option value="Normal">Normal</option>
                   <option value="Multiply">Multiply</option>
@@ -107,34 +115,27 @@ export default function LayersPanel({
                   <option value="Soft Light">Soft Light</option>
                   <option value="Hard Light">Hard Light</option>
                   <option value="Color Dodge">Color Dodge</option>
+                  <option value="Darken">Darken</option>
+                  <option value="Lighten">Lighten</option>
+                  <option value="Difference">Difference</option>
                 </select>
               </div>
 
-              {/* Opacity & Fill Sliders */}
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-slate-400">
-                    <span>Opacity</span>
-                    <span className="font-mono text-indigo-400">{opacityVal}%</span>
-                  </div>
-                  <input
-                    type="range" min="0" max="100" value={opacityVal}
-                    onChange={(e) => setOpacityVal(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500 h-1 bg-slate-800 rounded cursor-pointer"
-                  />
+              {/* Opacity Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-slate-400 text-[10px]">
+                  <span>{language === 'bn' ? 'স্বচ্ছতা (Opacity)' : 'Opacity'}</span>
+                  <span className="font-mono text-indigo-400 font-bold">{activeOpacity}%</span>
                 </div>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between text-slate-400">
-                    <span>Fill</span>
-                    <span className="font-mono text-indigo-400">{fillVal}%</span>
-                  </div>
-                  <input
-                    type="range" min="0" max="100" value={fillVal}
-                    onChange={(e) => setFillVal(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500 h-1 bg-slate-800 rounded cursor-pointer"
-                  />
-                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={activeOpacity}
+                  disabled={!activeLayerId}
+                  onChange={(e) => onOpacityChange?.(parseInt(e.target.value))}
+                  className="w-full accent-indigo-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer disabled:opacity-40"
+                />
               </div>
             </div>
 

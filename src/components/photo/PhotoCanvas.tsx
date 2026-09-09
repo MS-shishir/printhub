@@ -16,13 +16,15 @@ interface PhotoCanvasProps {
   isCropActive: boolean;
   cropMode?: CropMode;
   onSetCropMode?: (mode: CropMode) => void;
-  onApplyCropCanvas?: (resultCanvas: HTMLCanvasElement) => void;
+  onApplyCropCanvas?: (resultCanvas: HTMLCanvasElement, cropMeta?: any) => void;
   onCancelCrop: () => void;
   isProcessing?: boolean;
   showShoulderRuler?: boolean;
   currentRotationAngle?: number;
   onRotateAngle?: (angle: number) => void;
   onCloseShoulderRuler?: () => void;
+  activeLayerId?: string | null;
+  activeCropTargetId?: string | null;
   
   // Local Selective Adjustment Painting Overlay Props
   isLocalPaintingActive?: boolean;
@@ -53,6 +55,8 @@ export default function PhotoCanvas({
   currentRotationAngle = 0,
   onRotateAngle,
   onCloseShoulderRuler,
+  activeLayerId = null,
+  activeCropTargetId = null,
   isLocalPaintingActive = false,
   activeMaskCanvas = null,
   localBrushSize = 30,
@@ -63,8 +67,16 @@ export default function PhotoCanvas({
 }: PhotoCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const activeObj = fabricCanvas?.getActiveObject();
-  const activeImage = (activeObj?.isType('image') ? activeObj : fabricCanvas?.getObjects().find((o) => o.isType('image'))) as fabric.Image | null;
+  const effectiveTargetId = activeCropTargetId || activeLayerId;
+  const targetCropObject = 
+    (effectiveTargetId ? fabricCanvas?.getObjects().find((o) => (o as any).id === effectiveTargetId) : null) ||
+    fabricCanvas?.getActiveObject() || 
+    fabricCanvas?.getObjects().filter((o) => o.isType && (o.isType('group') || o.isType('image'))).pop() || 
+    fabricCanvas?.getObjects()[0] || null;
+
+  const activeImage = (targetCropObject && (targetCropObject.isType ? (targetCropObject.isType('image') || targetCropObject.isType('group') || targetCropObject.isType('activeSelection')) : true)
+    ? targetCropObject
+    : null) as fabric.FabricObject | fabric.Image | fabric.Group | any | null;
 
   return (
     <div className="relative flex-1 flex items-center justify-center bg-slate-950 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:16px_16px] overflow-hidden select-none">
@@ -112,13 +124,13 @@ export default function PhotoCanvas({
         )}
 
         {/* Professional Dual-Mode Crop Overlay (Normal Rectangular & 4-Corner Perspective Warp) */}
-        {isCropActive && activeImage && (
+        {isCropActive && (
           <PhotoCropOverlay
             fabricCanvas={fabricCanvas || null}
             activeImage={activeImage}
             cropMode={cropMode}
             onSetCropMode={(m) => onSetCropMode && onSetCropMode(m)}
-            onApplyCrop={(res) => onApplyCropCanvas && onApplyCropCanvas(res)}
+            onApplyCrop={(res, meta) => onApplyCropCanvas && onApplyCropCanvas(res, meta)}
             onCancelCrop={onCancelCrop}
             language={language}
           />

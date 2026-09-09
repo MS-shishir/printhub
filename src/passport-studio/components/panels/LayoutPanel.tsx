@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Plus, GripVertical, RotateCw, Trash2, Layers, Info } from 'lucide-react';
+import { LayoutGrid, Plus, GripVertical, RotateCw, Trash2, Layers, Info, ImagePlus } from 'lucide-react';
 import { usePassportStore } from '../../store';
-import { COPY_COUNTS } from '../../services/template.service';
-import { getTemplate } from '../../services/template.service';
+import { COPY_COUNTS, getTemplate } from '../../services/template.service';
 import { maxCopiesThatFit } from '../../services/layout.service';
 
 export default function LayoutPanel() {
@@ -13,26 +12,57 @@ export default function LayoutPanel() {
 
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
 
+  const activePhoto = state.croppedImage || state.processedImage || state.originalImage;
+
   const handleSaveCurrentToTray = () => {
-    if (!state.croppedImage) return;
+    if (!activePhoto) {
+      dispatch({
+        type: 'ADD_TOAST',
+        payload: {
+          id: 'tray_no_img',
+          message: '⚠️ প্রথমে একটি ছবি আপলোড ও ক্রপ করুন!',
+          type: 'warning',
+          duration: 3000,
+        },
+      });
+      return;
+    }
+
+    const wMm = state.selectedTemplateId === 'custom' ? state.customWidth : template.widthMm;
+    const hMm = state.selectedTemplateId === 'custom' ? state.customHeight : template.heightMm;
+
     dispatch({
       type: 'ADD_TO_PROCESSED_TRAY',
       payload: {
         name: state.photoName || `Photo #${processedTray.length + 1}`,
-        croppedUrl: state.croppedImage,
+        croppedUrl: activePhoto,
         templateId: state.selectedTemplateId,
-        widthMm: template.widthMm,
-        heightMm: template.heightMm,
+        widthMm: wMm,
+        heightMm: hMm,
         defaultCopies: layoutConfig.copies || 4,
       },
     });
+
     dispatch({
       type: 'ADD_TOAST',
       payload: {
-        id: 'tray_add',
-        message: '💾 বর্তমান প্রসেসড ছবিটি লেআউট ট্রেইতে যোগ হয়েছে!',
+        id: 'tray_add_' + Date.now(),
+        message: `💾 বর্তমান ছবিটি (${wMm}×${hMm}mm) লেআউট ট্রেইতে সেভ হয়েছে!`,
         type: 'success',
         duration: 3000,
+      },
+    });
+  };
+
+  const handleProcessAnotherPhoto = () => {
+    dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'upload' });
+    dispatch({
+      type: 'ADD_TOAST',
+      payload: {
+        id: 'upload_next',
+        message: '📷 নতুন ছবি আপলোড করুন। আগের ছবিটি ট্রেইতে সংরক্ষিত আছে।',
+        type: 'info',
+        duration: 3500,
       },
     });
   };
@@ -56,7 +86,7 @@ export default function LayoutPanel() {
   };
 
   return (
-    <div className="p-4 space-y-4 select-none text-slate-100 flex flex-col h-full">
+    <div className="p-4 space-y-3.5 select-none text-slate-100 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2">
@@ -68,24 +98,45 @@ export default function LayoutPanel() {
             <p className="text-[10px] text-slate-500">Manage & reorder photos to print</p>
           </div>
         </div>
-        <span className="text-[10px] text-indigo-400 font-mono font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-          {processedTray.length} Photos
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-indigo-400 font-mono font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+            {processedTray.length} Photos
+          </span>
+          {processedTray.length > 0 && (
+            <button
+              onClick={() => dispatch({ type: 'CLEAR_PROCESSED_TRAY' })}
+              className="text-[9px] font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-500/20 transition"
+              title="Clear tray"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Action to Save Current Photo */}
-      {state.croppedImage && (
+      {/* Action Buttons */}
+      <div className="space-y-2 shrink-0">
+        {activePhoto && (
+          <button
+            onClick={handleSaveCurrentToTray}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-900/30"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Save Current Photo to Tray</span>
+          </button>
+        )}
+
         <button
-          onClick={handleSaveCurrentToTray}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-600/30 to-violet-600/30 border border-indigo-500/40 hover:bg-indigo-600/40 text-indigo-200 text-xs font-bold transition-all shadow-md shrink-0"
+          onClick={handleProcessAnotherPhoto}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-indigo-500/60 hover:bg-slate-800 text-slate-200 text-xs font-bold transition-all"
         >
-          <Plus className="w-4 h-4 text-indigo-400" />
-          <span>Save Current Photo to Tray</span>
+          <ImagePlus className="w-4 h-4 text-emerald-400" />
+          <span>+ Process Another Photo</span>
         </button>
-      )}
+      </div>
 
       {/* Processed Photos List / Empty State */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
         {processedTray.length === 0 ? (
           <div className="bg-slate-950/60 p-4 rounded-xl border border-dashed border-slate-800 text-center space-y-2 my-auto">
             <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-600">
@@ -93,13 +144,13 @@ export default function LayoutPanel() {
             </div>
             <p className="text-xs font-bold text-slate-300">ট্রেইতে কোনো ছবি সেভ নেই</p>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              আপনি "Save Current Photo to Tray" চাপলে বর্তমান ছবিটি ট্রেইতে সেভ হবে। ৩-৪টি ছবি একসাথে ১টি পেজে প্রিন্ট করতে ট্রেই ব্যবহার করুন।
+              আপনি <strong>"Save Current Photo to Tray"</strong> চাপলে বর্তমান ছবিটি ট্রেইতে সেভ হবে। এরপর <strong>"+ Process Another Photo"</strong> চেপে একাধিক পাসপোর্ট ও স্ট্যাম্প ছবি ১টি পেজে একসাথে প্রিন্ট করতে পারবেন।
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span>Saved Photos Tray</span>
+              <span>SAVED PHOTOS TRAY ({processedTray.length})</span>
               <span className="text-slate-500 font-normal">Drag handles to reorder</span>
             </div>
 
@@ -110,7 +161,7 @@ export default function LayoutPanel() {
                 onDragStart={(e) => handleDragStart(e, idx)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, idx)}
-                className={`bg-slate-950/80 border rounded-xl p-2.5 space-y-2.5 transition-all cursor-grab active:cursor-grabbing ${
+                className={`bg-slate-950/90 border rounded-xl p-2.5 space-y-2.5 transition-all cursor-grab active:cursor-grabbing ${
                   draggedIdx === idx
                     ? 'border-indigo-500 bg-indigo-950/40 shadow-lg scale-[0.98]'
                     : 'border-slate-800 hover:border-slate-700'
@@ -134,10 +185,14 @@ export default function LayoutPanel() {
                     />
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-slate-200 truncate">{item.name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">
-                        {item.rotateDegrees === 90 || item.rotateDegrees === 270
-                          ? `${item.heightMm}×${item.widthMm}mm (90°)`
-                          : `${item.widthMm}×${item.heightMm}mm`}
+                      <div className="text-[10px] text-indigo-400 font-mono font-semibold flex items-center gap-1.5 mt-0.5">
+                        <span>
+                          {item.rotateDegrees === 90 || item.rotateDegrees === 270
+                            ? `${item.heightMm}×${item.widthMm}mm (90°)`
+                            : `${item.widthMm}×${item.heightMm}mm`}
+                        </span>
+                        <span className="text-slate-600">·</span>
+                        <span className="text-slate-400">{item.copies} কপি</span>
                       </div>
                     </div>
                   </div>
@@ -193,11 +248,11 @@ export default function LayoutPanel() {
         )}
       </div>
 
-      {/* Single Photo Copies Selector (if tray is empty) */}
-      {processedTray.length === 0 && (
+      {/* Copy Count Selector for saving photo to tray */}
+      {processedTray.length === 0 && activePhoto && (
         <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 space-y-2 shrink-0">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between">
-            <span>Single Photo Copies</span>
+            <span>ট্রে'তে যোগ করার কপি সংখ্যা</span>
             <span className="text-indigo-400 font-mono">max {maxFit} fit</span>
           </div>
           <div className="grid grid-cols-4 gap-1.5">
@@ -216,7 +271,7 @@ export default function LayoutPanel() {
                       : 'bg-slate-900 text-slate-700 cursor-not-allowed'
                   }`}
                 >
-                  {n}
+                  {n} কপি
                 </button>
               );
             })}

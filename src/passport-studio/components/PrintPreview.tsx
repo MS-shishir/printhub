@@ -184,6 +184,36 @@ export default function PrintPreview() {
       ctx.restore();
     }
 
+    if (items.length === 0) {
+      // ── Empty Print Sheet Placeholder Guide ───────────────────────────
+      ctx.save();
+      const centerX = displayW / 2;
+      const centerY = displayH / 2;
+
+      // Dashed inner placeholder guide
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.22)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([5, 5]);
+      const padX = displayW * 0.08;
+      const padY = displayH * 0.08;
+      ctx.strokeRect(padX, padY, displayW - padX * 2, displayH - padY * 2);
+      ctx.setLineDash([]);
+
+      // Helpful Bengali & English prompt
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      ctx.fillStyle = 'rgba(71, 85, 105, 0.9)';
+      ctx.font = `bold ${Math.max(11, Math.round(scale * 3.4))}px sans-serif`;
+      ctx.fillText('📄 প্রিন্ট শিট খালি (Print Sheet is Empty)', centerX, centerY - Math.max(11, scale * 3.2));
+
+      ctx.fillStyle = 'rgba(100, 116, 139, 0.75)';
+      ctx.font = `normal ${Math.max(9, Math.round(scale * 2.3))}px sans-serif`;
+      ctx.fillText('ছবি যোগ করতে বামপাশের "Save Current Photo to Tray" বাটনে ক্লিক করুন', centerX, centerY + Math.max(11, scale * 3.2));
+
+      ctx.restore();
+    }
+
     for (let idx = 0; idx < items.length; idx++) {
       const item = items[idx];
       const isSelected = selIdx === idx;
@@ -260,8 +290,8 @@ export default function PrintPreview() {
       }
     }
 
-    // Optional Header Text (Only if explicitly enabled)
-    if (layoutConfig.showPrintHeader) {
+    // Optional Header Text (Only if explicitly enabled and sheet has items)
+    if (layoutConfig.showPrintHeader && items.length > 0) {
       ctx.fillStyle = 'rgba(100,116,139,0.6)';
       ctx.font = `bold ${Math.max(6, scale * 3)}px sans-serif`;
       ctx.fillText(
@@ -292,7 +322,16 @@ export default function PrintPreview() {
       let rowMaxHMm = 0;
       let idCounter = 0;
 
-      for (const item of processedTray) {
+      for (let itemIdx = 0; itemIdx < processedTray.length; itemIdx++) {
+        const item = processedTray[itemIdx];
+
+        // Start new batch item on fresh row if line was already partially filled
+        if (itemIdx > 0 && currentXMm > leftMarginMm) {
+          currentXMm = leftMarginMm;
+          currentYMm += rowMaxHMm + gapMm;
+          rowMaxHMm = 0;
+        }
+
         for (let i = 0; i < item.copies; i++) {
           idCounter++;
           const isRotated = item.rotateDegrees === 90 || isRotatedGlobal;
@@ -319,30 +358,13 @@ export default function PrintPreview() {
           currentXMm += pW + gapMm;
         }
       }
-    } else {
-      const layout = calculateLayout(template, layoutConfig);
-      const img = state.croppedImage || state.processedImage || state.originalImage;
-      if (img) {
-        layout.placed.forEach((place, idx) => {
-          batchList.push({
-            id: `single_${idx}`,
-            url: img,
-            name: state.photoName || 'Photo',
-            xMm: place.xMm,
-            yMm: place.yMm,
-            widthMm: place.widthMm,
-            heightMm: place.heightMm,
-            rotateDegrees: isRotatedGlobal ? 90 : 0,
-          });
-        });
-      }
     }
 
     setPlacedItemsRaw(batchList);
     setSelectedIndex(null);
     undoStackRef.current = [];
     redoStackRef.current = [];
-  }, [processedTray, layoutConfig, template, paperW, paperH, state.croppedImage, state.processedImage, state.originalImage, state.photoName]);
+  }, [processedTray, layoutConfig, template, paperW, paperH]);
 
   // ── Mouse Drag ───────────────────────────────────────────────────────────────
   const handleMouseDownCanvas = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {

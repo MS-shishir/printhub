@@ -1,78 +1,28 @@
 /**
- * CropEngine.ts - Production Crop & Aspect Ratio Engine
- * Identity photo aspect ratios (Passport, Stamp, Visa) and non-destructive canvas clipping.
+ * CropEngine.ts - Enterprise Mathematical Crop & Transform Engine for PrintHub Studio
+ * 
+ * Re-exports the modular Enterprise Crop Engine:
+ * - 2D Affine Inversion & Master Coordinate Mapping
+ * - Anchor Pinning & Aspect Ratio Constraint Solver
+ * - Subpixel Rotated Image Crop Extractor & Straighten Tool
+ * - 3x3 Projective Homography & Bilinear Perspective Warping
+ * - Classical Saliency & Smart Composition Engine
+ * - Physical DPI & Multi-Step Downsampling Engine
  */
 
-export interface CropPreset {
-  id: string;
-  name: string;
-  widthMm: number;
-  heightMm: number;
-  aspectRatio: number; // width / height
-}
+export * from './crop';
+
+import { CROP_PRESETS, CropPreset, CropRect } from './crop/CropTypes';
+import { CropConstraintSolver } from './crop/CropConstraintSolver';
+import { CropRotationEngine } from './crop/CropRotationEngine';
+import { CropExportEngine } from './crop/CropExportEngine';
+import { CropCoordinateMapper } from './crop/CropCoordinateMapper';
 
 export class CropEngine {
-  public static PRESETS: Record<string, CropPreset> = {
-    passport_bd: {
-      id: 'passport_bd',
-      name: '📸 বিডি পাসপোর্ট (40x50mm)',
-      widthMm: 40,
-      heightMm: 50,
-      aspectRatio: 40 / 50,
-    },
-    passport_epassport: {
-      id: 'passport_epassport',
-      name: '🛂 ই-পাসপোর্ট / ভিসা (35x45mm)',
-      widthMm: 35,
-      heightMm: 45,
-      aspectRatio: 35 / 45,
-    },
-    joint_photo: {
-      id: 'joint_photo',
-      name: '👥 জয়েন্ট ছবি (55x45mm)',
-      widthMm: 55,
-      heightMm: 45,
-      aspectRatio: 55 / 45,
-    },
-    stamp: {
-      id: 'stamp',
-      name: '🔖 স্ট্যাম্প সাইজ (25x30mm)',
-      widthMm: 25,
-      heightMm: 30,
-      aspectRatio: 25 / 30,
-    },
-    mini_stamp: {
-      id: 'mini_stamp',
-      name: '🔖 মিনি স্ট্যাম্প (20x25mm)',
-      widthMm: 20,
-      heightMm: 25,
-      aspectRatio: 20 / 25,
-    },
-    visa_us: {
-      id: 'visa_us',
-      name: '🌐 ইউএস / গ্লোবাল ভিসা (50x50mm)',
-      widthMm: 50,
-      heightMm: 50,
-      aspectRatio: 1.0,
-    },
-    square: {
-      id: 'square',
-      name: '⬛ স্কয়ার (1:1)',
-      widthMm: 30,
-      heightMm: 30,
-      aspectRatio: 1.0,
-    },
-    standard_3x4: {
-      id: 'standard_3x4',
-      name: '🖼️ স্ট্যান্ডার্ড (30x40mm)',
-      widthMm: 30,
-      heightMm: 40,
-      aspectRatio: 30 / 40,
-    },
-  };
+  public static PRESETS = CROP_PRESETS;
 
   /**
-   * Calculate crop box coordinates inside container based on target preset
+   * Calculate fitted crop box coordinates inside container based on target preset
    */
   public static getCropRect(
     containerWidth: number,
@@ -82,34 +32,31 @@ export class CropEngine {
     const preset = this.PRESETS[presetKey] || this.PRESETS.passport_bd;
     const targetRatio = preset.aspectRatio;
 
-    let width = containerWidth * 0.8;
-    let height = width / targetRatio;
+    const res = CropConstraintSolver.getFittedCenterRect(
+      { left: 0, top: 0, width: containerWidth, height: containerHeight },
+      targetRatio,
+      0.80
+    );
 
-    if (height > containerHeight * 0.8) {
-      height = containerHeight * 0.8;
-      width = height * targetRatio;
-    }
-
-    const x = (containerWidth - width) / 2;
-    const y = (containerHeight - height) / 2;
-
-    return { x, y, width, height };
+    return { x: res.left, y: res.top, width: res.width, height: res.height };
   }
 
   /**
-   * Crop an HTMLCanvasElement using crop bounds and return cropped canvas
+   * Simple flat rectangular canvas crop helper
    */
   public static cropCanvas(
     sourceCanvas: HTMLCanvasElement,
     cropBounds: { x: number; y: number; width: number; height: number }
   ): HTMLCanvasElement {
     const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = cropBounds.width;
-    outputCanvas.height = cropBounds.height;
+    outputCanvas.width = Math.max(1, cropBounds.width);
+    outputCanvas.height = Math.max(1, cropBounds.height);
 
     const ctx = outputCanvas.getContext('2d');
     if (!ctx) return sourceCanvas;
 
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(
       sourceCanvas,
       cropBounds.x,

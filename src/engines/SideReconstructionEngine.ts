@@ -14,6 +14,7 @@
  */
 
 export type ReconstructionSide = 'left_to_right' | 'right_to_left';
+export type TargetReconstructionZone = 'all' | 'shoulder_arm' | 'hair_head' | 'face_jaw' | 'ear';
 
 export interface CenterAxisConfig {
   cx: number; // Center X coordinate in pixels
@@ -36,11 +37,13 @@ export interface MultiZoneConfig {
 
 export interface GeometricReconstructionConfig {
   side: ReconstructionSide;
+  targetZone?: TargetReconstructionZone; // Selective part duplication ('all' | 'shoulder_arm' | 'hair_head' | 'face_jaw' | 'ear')
   axis: CenterAxisConfig;
   globalScale: number; // Global width scale factor (default 1.0)
   featherRadius: number; // Edge blend radius in pixels (default 12)
   opacity: number; // Layer opacity 0.0 to 1.0
   zones: MultiZoneConfig;
+  padding?: number; // Extra canvas padding on missing side in pixels (0 to 250)
 }
 
 export interface WarpStroke {
@@ -72,11 +75,13 @@ export const DEFAULT_ZONES: MultiZoneConfig = {
 
 export const DEFAULT_RECONSTRUCTION_CONFIG: GeometricReconstructionConfig = {
   side: 'left_to_right', // Reconstructing missing right side using existing left side
+  targetZone: 'shoulder_arm', // Default to selective shoulder & arm repair (most common & natural)
   axis: { cx: 400, angleDegrees: 0 },
   globalScale: 1.0,
   featherRadius: 14,
   opacity: 1.0,
   zones: DEFAULT_ZONES,
+  padding: 60, // Default 60px padding so mirrored arm has room to naturally curve out
 };
 
 export class SideReconstructionEngine {
@@ -99,11 +104,63 @@ export class SideReconstructionEngine {
   }
 
   /**
-   * Automatically calculates an initial Face Center Axis based on image dimensions and bounding mass.
+   * Automatically calculates an initial Face Center Axis based on facial mass / contrast scanning.
    */
   public static autoDetectCenterAxis(canvas: HTMLCanvasElement): CenterAxisConfig {
+    const width = canvas.width;
+    const height = canvas.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    
+    if (!ctx || width <= 10 || height <= 10) {
+      return {
+        cx: Math.round(width / 2),
+        angleDegrees: 0,
+      };
+    }
+
+    try {
+      // Sample the upper-middle facial region (15% to 50% height)
+      const startY = Math.floor(height * 0.15);
+      const sampleH = Math.floor(height * 0.35);
+      const imgData = ctx.getImageData(0, startY, width, sampleH);
+      const data = imgData.data;
+
+      let sumX = 0;
+      let totalWeight = 0;
+
+      for (let y = 0; y < sampleH; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const a = data[idx + 3];
+          if (a > 30) {
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            // Ignore near-white / near-transparent background
+            const isWhiteBg = r > 240 && g > 240 && b > 240;
+            if (!isWhiteBg) {
+              const weight = (a / 255) * (1 - (r + g + b) / (3 * 255) * 0.5);
+              sumX += x * weight;
+              totalWeight += weight;
+            }
+          }
+        }
+      }
+
+      if (totalWeight > 50) {
+        const detectedCx = Math.round(sumX / totalWeight);
+        const boundedCx = Math.max(Math.round(width * 0.2), Math.min(Math.round(width * 0.8), detectedCx));
+        return {
+          cx: boundedCx,
+          angleDegrees: 0,
+        };
+      }
+    } catch {
+      // Fallback to center
+    }
+
     return {
-      cx: Math.round(canvas.width / 2),
+      cx: Math.round(width / 2),
       angleDegrees: 0,
     };
   }
@@ -129,15 +186,51 @@ export class SideReconstructionEngine {
   }
 
   /**
+   * Detects the dominant background color (white, transparent, etc.) from corner samples.
+   */
+  public static detectBackgroundColor(
+    data: Uint8ClampedArray,
+    width: number,
+    height: number
+  ): [number, number, number, number] {
+    if (width <= 0 || height <= 0 || !data.length) return [255, 255, 255, 0];
+    const corners = [
+      0,
+      Math.max(0, width - 1) * 4,
+      Math.max(0, (height - 1) * width) * 4,
+      Math.max(0, (height - 1) * width + width - 1) * 4,
+    ];
+    let sumR = 0, sumG = 0, sumB = 0, sumA = 0;
+    for (const idx of corners) {
+      if (idx < data.length - 3) {
+        sumR += data[idx];
+        sumG += data[idx + 1];
+        sumB += data[idx + 2];
+        sumA += data[idx + 3];
+      }
+    }
+    const avgA = Math.round(sumA / 4);
+    if (avgA < 30) return [255, 255, 255, 0]; // Transparent background
+    return [Math.round(sumR / 4), Math.round(sumG / 4), Math.round(sumB / 4), avgA];
+  }
+
+  /**
    * Samples a 4-channel subpixel RGBA color from ImageData using Bilinear Interpolation.
+   * Gracefully handles boundary fade without smearing edge pixels.
    */
   public static sampleBilinear(
     data: Uint8ClampedArray,
     width: number,
     height: number,
     x: number,
-    y: number
+    y: number,
+    fallbackBg: [number, number, number, number] = [255, 255, 255, 0]
   ): [number, number, number, number] {
+    // If outside boundary by more than 1 pixel, return clean background
+    if (x < -1 || x > width || y < -1 || y > height) {
+      return fallbackBg;
+    }
+
     const clampedX = Math.max(0, Math.min(width - 1, x));
     const clampedY = Math.max(0, Math.min(height - 1, y));
 
@@ -164,6 +257,16 @@ export class SideReconstructionEngine {
     const b = w00 * data[idx00 + 2] + w10 * data[idx10 + 2] + w01 * data[idx01 + 2] + w11 * data[idx11 + 2];
     const a = w00 * data[idx00 + 3] + w10 * data[idx10 + 3] + w01 * data[idx01 + 3] + w11 * data[idx11 + 3];
 
+    // Smooth boundary fade-out
+    if (x < 0) {
+      const edgeFactor = Math.max(0, 1 + x);
+      return [r, g, b, Math.round(a * edgeFactor)];
+    }
+    if (x > width - 1) {
+      const edgeFactor = Math.max(0, width - x);
+      return [r, g, b, Math.round(a * edgeFactor)];
+    }
+
     return [r, g, b, a];
   }
 
@@ -175,12 +278,6 @@ export class SideReconstructionEngine {
     zones: MultiZoneConfig,
     globalScale: number
   ): { scale: number; shiftX: number; shiftY: number; feather: number } {
-    // Height boundaries:
-    // Hair: 0.0 to 0.25
-    // Face: 0.20 to 0.65
-    // Ear: 0.35 to 0.55 (blends with face)
-    // Shoulder: 0.60 to 1.00
-
     let scale = globalScale;
     let shiftX = 0;
     let shiftY = 0;
@@ -188,7 +285,6 @@ export class SideReconstructionEngine {
 
     if (normalizedY < 0.22) {
       // Pure Hair zone
-      const t = Math.max(0, Math.min(1, normalizedY / 0.22));
       const s = zones.hair.scale * globalScale;
       scale = s;
       shiftX = zones.hair.shiftX;
@@ -197,7 +293,6 @@ export class SideReconstructionEngine {
     } else if (normalizedY < 0.60) {
       // Face / Ear zone
       const t = (normalizedY - 0.22) / (0.60 - 0.22);
-      // Blend hair to face
       const hairScale = zones.hair.scale * globalScale;
       const faceScale = zones.face.scale * globalScale;
       scale = hairScale * (1 - t) + faceScale * t;
@@ -205,7 +300,6 @@ export class SideReconstructionEngine {
       shiftY = zones.hair.shiftY * (1 - t) + zones.face.shiftY * t;
       feather = zones.face.feather;
 
-      // Ear influence in mid-height
       if (normalizedY >= 0.32 && normalizedY <= 0.55) {
         const earT = Math.sin(((normalizedY - 0.32) / (0.55 - 0.32)) * Math.PI);
         const earScale = zones.ear.scale * globalScale;
@@ -228,8 +322,48 @@ export class SideReconstructionEngine {
   }
 
   /**
+   * Computes the vertical influence weight for selective part reconstruction.
+   */
+  public static getTargetZoneWeight(normalizedY: number, targetZone: TargetReconstructionZone = 'all'): number {
+    if (targetZone === 'all') return 1.0;
+
+    if (targetZone === 'shoulder_arm') {
+      // Reconstruct only from collarbone/chin down (Y >= 0.45)
+      if (normalizedY < 0.42) return 0.0;
+      if (normalizedY < 0.52) return this.smoothstep(0.42, 0.52, normalizedY);
+      return 1.0;
+    }
+
+    if (targetZone === 'hair_head') {
+      // Reconstruct only hair & head (Y <= 0.35)
+      if (normalizedY > 0.38) return 0.0;
+      if (normalizedY > 0.25) return 1.0 - this.smoothstep(0.25, 0.38, normalizedY);
+      return 1.0;
+    }
+
+    if (targetZone === 'face_jaw') {
+      // Reconstruct only face/jaw (0.18 <= Y <= 0.65)
+      if (normalizedY < 0.15 || normalizedY > 0.68) return 0.0;
+      if (normalizedY < 0.25) return this.smoothstep(0.15, 0.25, normalizedY);
+      if (normalizedY > 0.58) return 1.0 - this.smoothstep(0.58, 0.68, normalizedY);
+      return 1.0;
+    }
+
+    if (targetZone === 'ear') {
+      // Reconstruct only ear zone (0.28 <= Y <= 0.55)
+      if (normalizedY < 0.25 || normalizedY > 0.58) return 0.0;
+      if (normalizedY < 0.32) return this.smoothstep(0.25, 0.32, normalizedY);
+      if (normalizedY > 0.50) return 1.0 - this.smoothstep(0.50, 0.58, normalizedY);
+      return 1.0;
+    }
+
+    return 1.0;
+  }
+
+  /**
    * Executes the full Geometric Reconstruction Pipeline:
-   * Mirroring -> Width Scaling -> Zone Warping -> Bilinear Sampling -> Smoothstep Seam Blending.
+   * Mirroring -> Width Scaling -> Subpixel Bilinear Sampling -> Smoothstep Seam Blending.
+   * Supports Selective Part Duplication ('all' | 'shoulder_arm' | 'hair_head' | 'face_jaw' | 'ear').
    */
   public static applyGeometricReconstruction(
     sourceCanvas: HTMLCanvasElement,
@@ -238,83 +372,138 @@ export class SideReconstructionEngine {
     const width = sourceCanvas.width;
     const height = sourceCanvas.height;
 
-    const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = width;
-    outputCanvas.height = height;
-
     const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!srcCtx || width <= 0 || height <= 0) return sourceCanvas;
+
+    const isLeftToRight = config.side === 'left_to_right';
+    const padding = Math.max(0, Math.min(250, config.padding ?? 60));
+    const padLeft = (!isLeftToRight && padding > 0) ? padding : 0;
+    const padRight = (isLeftToRight && padding > 0) ? padding : 0;
+
+    const outWidth = width + padLeft + padRight;
+    const outHeight = height;
+
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = outWidth;
+    outputCanvas.height = outHeight;
+
     const outCtx = outputCanvas.getContext('2d', { willReadFrequently: true });
-    if (!srcCtx || !outCtx) return sourceCanvas;
+    if (!outCtx) return sourceCanvas;
 
     const srcImgData = srcCtx.getImageData(0, 0, width, height);
     const srcData = srcImgData.data;
+    const bgColor = this.detectBackgroundColor(srcData, width, height);
 
-    const outImgData = outCtx.createImageData(width, height);
+    if (bgColor[3] > 30) {
+      outCtx.fillStyle = `rgba(${bgColor[0]}, ${bgColor[1]}, ${bgColor[2]}, ${bgColor[3] / 255})`;
+      outCtx.fillRect(0, 0, outWidth, outHeight);
+    }
+
+    const outImgData = outCtx.createImageData(outWidth, outHeight);
     const outData = outImgData.data;
+    const targetZone = config.targetZone || 'all';
 
-    const isLeftToRight = config.side === 'left_to_right';
-
-    for (let y = 0; y < height; y++) {
-      const normalizedY = y / height;
-      const cxAtY = this.getAxisXAtY(config.axis, y, height);
+    for (let y = 0; y < outHeight; y++) {
+      const normalizedY = y / outHeight;
+      const zoneWeight = this.getTargetZoneWeight(normalizedY, targetZone);
+      const cxInSource = this.getAxisXAtY(config.axis, y, height);
+      const cxOnOutput = cxInSource + padLeft;
       const zone = this.getZoneTransformation(normalizedY, config.zones, config.globalScale);
       const featherR = Math.max(1, config.featherRadius || zone.feather);
 
-      for (let x = 0; x < width; x++) {
-        const outIdx = (y * width + x) * 4;
+      for (let x = 0; x < outWidth; x++) {
+        const outIdx = (y * outWidth + x) * 4;
+        const srcX = x - padLeft;
 
-        // Determine if current pixel is on the Existing Side or the Missing/Target Side
-        const isOnExistingSide = isLeftToRight ? x <= cxAtY : x >= cxAtY;
-        const distFromAxis = Math.abs(x - cxAtY);
+        // Determine if current pixel is on Existing Side or Missing/Target Side
+        const isOnExistingSide = isLeftToRight ? x <= cxOnOutput : x >= cxOnOutput;
+        const distFromAxis = Math.abs(x - cxOnOutput);
 
         if (isOnExistingSide) {
-          // Keep original pixels on the existing side
-          const srcIdx = (y * width + x) * 4;
-          outData[outIdx] = srcData[srcIdx];
-          outData[outIdx + 1] = srcData[srcIdx + 1];
-          outData[outIdx + 2] = srcData[srcIdx + 2];
-          outData[outIdx + 3] = srcData[srcIdx + 3];
-        } else {
-          // Reconstruct missing side pixel using geometric reflection + scaling + zone warp
-          // Mathematical formula: x_source = Cx - (x - Cx) / scale - shiftX
-          let xSource: number;
-          let ySource: number = y - zone.shiftY;
-
-          if (isLeftToRight) {
-            // Target is Right (x > cxAtY), Source is Left (xSource < cxAtY)
-            const targetDist = x - cxAtY;
-            const sourceDist = targetDist / Math.max(0.1, zone.scale);
-            xSource = cxAtY - sourceDist - zone.shiftX;
+          if (srcX >= 0 && srcX < width) {
+            const srcIdx = (y * width + srcX) * 4;
+            outData[outIdx] = srcData[srcIdx];
+            outData[outIdx + 1] = srcData[srcIdx + 1];
+            outData[outIdx + 2] = srcData[srcIdx + 2];
+            outData[outIdx + 3] = srcData[srcIdx + 3];
           } else {
-            // Target is Left (x < cxAtY), Source is Right (xSource > cxAtY)
-            const targetDist = cxAtY - x;
-            const sourceDist = targetDist / Math.max(0.1, zone.scale);
-            xSource = cxAtY + sourceDist - zone.shiftX;
+            outData[outIdx] = bgColor[0];
+            outData[outIdx + 1] = bgColor[1];
+            outData[outIdx + 2] = bgColor[2];
+            outData[outIdx + 3] = bgColor[3];
           }
+        } else {
+          // If zone weight is 0 (outside the selected part, e.g. face when doing shoulder-only), keep 100% original pixel!
+          if (zoneWeight <= 0.001) {
+            if (srcX >= 0 && srcX < width) {
+              const srcIdx = (y * width + srcX) * 4;
+              outData[outIdx] = srcData[srcIdx];
+              outData[outIdx + 1] = srcData[srcIdx + 1];
+              outData[outIdx + 2] = srcData[srcIdx + 2];
+              outData[outIdx + 3] = srcData[srcIdx + 3];
+            } else {
+              outData[outIdx] = bgColor[0];
+              outData[outIdx + 1] = bgColor[1];
+              outData[outIdx + 2] = bgColor[2];
+              outData[outIdx + 3] = bgColor[3];
+            }
+          } else {
+            // Target side: sample from source side with geometric reflection, scale & shift
+            let xSource: number;
+            let ySource: number = y - zone.shiftY;
 
-          // Sample reconstructed color with Bilinear Interpolation
-          const [reconR, reconG, reconB, reconA] = this.sampleBilinear(srcData, width, height, xSource, ySource);
+            if (isLeftToRight) {
+              // Target is Right (x > cxOnOutput), Source is Left (xSource < cxInSource)
+              const targetDist = x - cxOnOutput;
+              const sourceDist = targetDist / Math.max(0.1, zone.scale);
+              xSource = cxInSource - sourceDist - zone.shiftX;
+            } else {
+              // Target is Left (x < cxOnOutput), Source is Right (xSource > cxInSource)
+              const targetDist = cxOnOutput - x;
+              const sourceDist = targetDist / Math.max(0.1, zone.scale);
+              xSource = cxInSource + sourceDist - zone.shiftX;
+            }
 
-          // Calculate Smoothstep Alpha Seam Feathering around the Center Axis
-          // When distance from axis is within featherR, blend with original background/existing pixel
-          let blendAlpha = 1.0;
-          if (distFromAxis < featherR) {
-            blendAlpha = this.smoothstep(0, featherR, distFromAxis);
+            // Sample reconstructed color with Bilinear Interpolation & clean boundary fade
+            const [reconR, reconG, reconB, reconA] = this.sampleBilinear(
+              srcData,
+              width,
+              height,
+              xSource,
+              ySource,
+              bgColor
+            );
+
+            // Calculate Smoothstep Alpha Seam Feathering around the Center Axis
+            let blendAlpha = 1.0;
+            if (distFromAxis < featherR) {
+              blendAlpha = this.smoothstep(0, featherR, distFromAxis);
+            }
+            blendAlpha *= config.opacity;
+
+            // Effective blend factor modulated by zone weight
+            const effectiveAlpha = blendAlpha * zoneWeight;
+
+            if (srcX >= 0 && srcX < width && (distFromAxis < featherR || zoneWeight < 0.99)) {
+              // Near center seam or zone boundary: blend with existing image pixels for seamless join
+              const origIdx = (y * width + srcX) * 4;
+              const origR = srcData[origIdx];
+              const origG = srcData[origIdx + 1];
+              const origB = srcData[origIdx + 2];
+              const origA = srcData[origIdx + 3];
+
+              outData[outIdx] = Math.round(reconR * effectiveAlpha + origR * (1 - effectiveAlpha));
+              outData[outIdx + 1] = Math.round(reconG * effectiveAlpha + origG * (1 - effectiveAlpha));
+              outData[outIdx + 2] = Math.round(reconB * effectiveAlpha + origB * (1 - effectiveAlpha));
+              outData[outIdx + 3] = Math.round(reconA * effectiveAlpha + origA * (1 - effectiveAlpha));
+            } else {
+              // Inside selected part and away from seam: 100% replaced by clean mirrored shoulder
+              outData[outIdx] = reconR;
+              outData[outIdx + 1] = reconG;
+              outData[outIdx + 2] = reconB;
+              outData[outIdx + 3] = reconA;
+            }
           }
-
-          // Apply global opacity
-          blendAlpha *= config.opacity;
-
-          const origIdx = (y * width + x) * 4;
-          const origR = srcData[origIdx];
-          const origG = srcData[origIdx + 1];
-          const origB = srcData[origIdx + 2];
-          const origA = srcData[origIdx + 3];
-
-          outData[outIdx] = Math.round(reconR * blendAlpha + origR * (1 - blendAlpha));
-          outData[outIdx + 1] = Math.round(reconG * blendAlpha + origG * (1 - blendAlpha));
-          outData[outIdx + 2] = Math.round(reconB * blendAlpha + origB * (1 - blendAlpha));
-          outData[outIdx + 3] = Math.round(reconA * blendAlpha + origA * (1 - blendAlpha));
         }
       }
     }
@@ -473,7 +662,8 @@ export class SideReconstructionEngine {
     x: number,
     y: number,
     radius: number,
-    opacity: number = 0.5
+    opacity: number = 0.5,
+    padLeft: number = 0
   ): void {
     const ctx = targetCanvas.getContext('2d', { willReadFrequently: true });
     const origCtx = originalCanvas.getContext('2d', { willReadFrequently: true });
@@ -481,6 +671,8 @@ export class SideReconstructionEngine {
 
     const width = targetCanvas.width;
     const height = targetCanvas.height;
+    const origWidth = originalCanvas.width;
+    const origHeight = originalCanvas.height;
 
     const minX = Math.max(0, Math.floor(x - radius));
     const maxX = Math.min(width - 1, Math.ceil(x + radius));
@@ -492,7 +684,9 @@ export class SideReconstructionEngine {
     if (w <= 0 || h <= 0) return;
 
     const targetData = ctx.getImageData(minX, minY, w, h);
-    const origData = origCtx.getImageData(minX, minY, w, h);
+    const origImgData = origCtx.getImageData(0, 0, origWidth, origHeight);
+    const origPixels = origImgData.data;
+    const bgColor = this.detectBackgroundColor(origPixels, origWidth, origHeight);
 
     for (let py = 0; py < h; py++) {
       const cy = minY + py;
@@ -504,10 +698,26 @@ export class SideReconstructionEngine {
           const alpha = (1 - this.smoothstep(0, radius, dist)) * opacity;
           const idx = (py * w + px) * 4;
 
-          targetData.data[idx] = Math.round(origData.data[idx] * alpha + targetData.data[idx] * (1 - alpha));
-          targetData.data[idx + 1] = Math.round(origData.data[idx + 1] * alpha + targetData.data[idx + 1] * (1 - alpha));
-          targetData.data[idx + 2] = Math.round(origData.data[idx + 2] * alpha + targetData.data[idx + 2] * (1 - alpha));
-          targetData.data[idx + 3] = Math.round(origData.data[idx + 3] * alpha + targetData.data[idx + 3] * (1 - alpha));
+          const srcX = cx - padLeft;
+          const srcY = cy;
+
+          let oR = bgColor[0];
+          let oG = bgColor[1];
+          let oB = bgColor[2];
+          let oA = bgColor[3];
+
+          if (srcX >= 0 && srcX < origWidth && srcY >= 0 && srcY < origHeight) {
+            const oIdx = (srcY * origWidth + srcX) * 4;
+            oR = origPixels[oIdx];
+            oG = origPixels[oIdx + 1];
+            oB = origPixels[oIdx + 2];
+            oA = origPixels[oIdx + 3];
+          }
+
+          targetData.data[idx] = Math.round(oR * alpha + targetData.data[idx] * (1 - alpha));
+          targetData.data[idx + 1] = Math.round(oG * alpha + targetData.data[idx + 1] * (1 - alpha));
+          targetData.data[idx + 2] = Math.round(oB * alpha + targetData.data[idx + 2] * (1 - alpha));
+          targetData.data[idx + 3] = Math.round(oA * alpha + targetData.data[idx + 3] * (1 - alpha));
         }
       }
     }

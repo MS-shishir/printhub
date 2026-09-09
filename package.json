@@ -1,7 +1,7 @@
 {
   "name": "printhub-studio",
   "productName": "PrintHub Studio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "PrintHub Studio — Professional Photo & Document Print Suite",
   "author": "PrintHub Studio",
   "private": true,
@@ -9,14 +9,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "vite build --emptyOutDir",
     "preview": "vite preview",
-    "clean": "rm -rf dist release",
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive:true, force:true}); fs.rmSync('release', {recursive:true, force:true});\"",
     "lint": "tsc --noEmit",
     "test": "tsx src/tests/run-tests.ts",
     "electron:dev": "concurrently -k \"vite --port=3000 --host=0.0.0.0\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "vite build && electron-builder --win",
-    "electron:build:dir": "vite build && electron-builder --win --dir",
+    "electron:build": "vite build --emptyOutDir && electron-builder --win",
+    "electron:build:dir": "vite build --emptyOutDir && electron-builder --win --dir",
+    "electron:release": "vite build --emptyOutDir && electron-builder --win -p always",
     "package": "npm run electron:build"
   },
   "build": {
@@ -28,6 +29,13 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "MS-shishir",
+        "repo": "printhub"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -53,10 +61,13 @@
     "@hyzyla/pdfium": "^2.1.13",
     "@imgly/background-removal": "^1.7.0",
     "@mediapipe/face_detection": "^0.4.1646425229",
+    "@mediapipe/selfie_segmentation": "^0.1.1675465747",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "bwip-js": "^4.11.2",
     "dotenv": "^17.2.3",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "express": "^4.21.2",
     "fabric": "^7.4.0",
     "jsbarcode": "^3.12.3",

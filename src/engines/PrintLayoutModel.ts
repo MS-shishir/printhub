@@ -17,6 +17,63 @@ export type ColorPrintMode = 'Color' | 'Monochrome';
 export type DuplexMode = 'simplex' | 'longEdge' | 'shortEdge';
 export type ContentAlignment = 'center' | 'top-left' | 'top-center' | 'bottom-center';
 
+export type PaperType =
+  | 'plain'
+  | 'premium_glossy'
+  | 'matte'
+  | 'ultra_glossy'
+  | 'photo_glossy'
+  | 'semigloss'
+  | 'envelope'
+  | 'cardstock';
+
+export type PrintQuality =
+  | 'draft'
+  | 'draft_vivid'
+  | 'standard'
+  | 'standard_vivid'
+  | 'high'
+  | 'ultra_high';
+
+export type MultiPageSetting = 'off' | '2up' | '4up';
+export type DuplexSetting = 'off' | 'longEdge' | 'shortEdge' | 'manual';
+
+export interface PaperTypeDefinition {
+  id: PaperType;
+  labelEn: string;
+  labelBn: string;
+  finish: 'matte' | 'glossy' | 'plain';
+}
+
+export const PAPER_TYPES_CONFIG: Record<PaperType, PaperTypeDefinition> = {
+  plain: { id: 'plain', labelEn: 'Plain paper', labelBn: 'সাধারণ কাগজ (Plain Paper)', finish: 'plain' },
+  premium_glossy: { id: 'premium_glossy', labelEn: 'Epson Premium Glossy', labelBn: 'এপসন প্রিমিয়াম গ্লসি (Premium Glossy)', finish: 'glossy' },
+  matte: { id: 'matte', labelEn: 'Epson Matte', labelBn: 'এপসন ম্যাট পেপার (Matte Paper)', finish: 'matte' },
+  ultra_glossy: { id: 'ultra_glossy', labelEn: 'Epson Ultra Glossy', labelBn: 'এপসন আল্ট্রা গ্লসি (Ultra Glossy)', finish: 'glossy' },
+  photo_glossy: { id: 'photo_glossy', labelEn: 'Photo Paper Glossy', labelBn: 'ফটো পেপার গ্লসি (Glossy)', finish: 'glossy' },
+  semigloss: { id: 'semigloss', labelEn: 'Premium Semigloss', labelBn: 'প্রিমিয়াম সেমি-গ্লস (Semigloss)', finish: 'glossy' },
+  envelope: { id: 'envelope', labelEn: 'Envelope', labelBn: 'এনভেলপ / খাম (Envelope)', finish: 'plain' },
+  cardstock: { id: 'cardstock', labelEn: 'Cardstock / Heavy', labelBn: 'কার্ডস্টক / ভারী কাগজ', finish: 'matte' },
+};
+
+export interface PrintQualityDefinition {
+  id: PrintQuality;
+  labelEn: string;
+  labelBn: string;
+  dpi: number;
+  contrastBoost?: number;
+  saturationBoost?: number;
+}
+
+export const PRINT_QUALITY_CONFIG: Record<PrintQuality, PrintQualityDefinition> = {
+  draft: { id: 'draft', labelEn: 'Draft', labelBn: 'খসড়া (Draft 150 DPI)', dpi: 150 },
+  draft_vivid: { id: 'draft_vivid', labelEn: 'Draft-Vivid', labelBn: 'ড্রাফট-উজ্জ্বল (Draft Vivid)', dpi: 150, contrastBoost: 1.08, saturationBoost: 1.15 },
+  standard: { id: 'standard', labelEn: 'Standard', labelBn: 'স্ট্যান্ডার্ড (Standard 300 DPI)', dpi: 300 },
+  standard_vivid: { id: 'standard_vivid', labelEn: 'Standard-Vivid', labelBn: 'স্ট্যান্ডার্ড-উজ্জ্বল (Standard Vivid)', dpi: 300, contrastBoost: 1.05, saturationBoost: 1.15 },
+  high: { id: 'high', labelEn: 'High', labelBn: 'উচ্চ মান (High Photo 600 DPI)', dpi: 600 },
+  ultra_high: { id: 'ultra_high', labelEn: 'More Settings / Ultra High', labelBn: 'মোর সেটিংস (Ultra High 1200 DPI)', dpi: 1200 },
+};
+
 export type PrintRangeMode = 'all' | 'current' | 'custom' | 'view';
 export type PageSubset = 'all' | 'odd' | 'even';
 export type PrintHandlingMode = 'scale' | 'tile' | 'nup' | 'booklet';
@@ -68,12 +125,33 @@ export interface BookletConfig {
   binding: BookletBinding;
 }
 
+export interface WatermarkConfig {
+  enabled: boolean;
+  text: string;
+  opacity: number;
+  angle: number;
+  fontSize: number;
+  color: string;
+}
+
+export interface ColorAdjustmentConfig {
+  brightness: number; // -50 to +50 (default 0)
+  contrast: number; // -50 to +50 (default 0)
+  saturation: number; // -50 to +50 (default 0)
+}
+
 export interface PrintLayoutOptions {
   paperSize: PaperSizeKey;
   customPaperWidthMm?: number;
   customPaperHeightMm?: number;
   orientation: PageOrientation;
   margins: PrintMarginsMm;
+  
+  // Driver options
+  paperType?: PaperType;
+  quality?: PrintQuality;
+  multiPage?: MultiPageSetting;
+  quietMode?: boolean;
   
   // Handling mode
   handlingMode: PrintHandlingMode;
@@ -85,6 +163,8 @@ export interface PrintLayoutOptions {
   nupConfig?: NupConfig;
   tileConfig?: TileConfig;
   bookletConfig?: BookletConfig;
+  watermark?: WatermarkConfig;
+  colorAdjustment?: ColorAdjustmentConfig;
 
   // Options & Toggles
   autoRotate?: boolean;
@@ -264,12 +344,14 @@ export class PrintLayoutModel {
     let placedHeightMm = docHeightMm;
     let effectiveScalePercent = 100;
 
-    const handlingMode = options.handlingMode || 'scale';
+    const handlingMode = options.multiPage === '2up' || options.multiPage === '4up' 
+      ? 'nup' 
+      : (options.handlingMode || 'scale');
     const gridCells: PlacedCellLayout[] = [];
 
     if (handlingMode === 'nup') {
       // ── N-Up Multi-Page Grid Layout ──────────────────────────────────────────
-      const pagesCount = options.nupConfig?.pagesPerSheet || 2;
+      const pagesCount = options.multiPage === '2up' ? 2 : options.multiPage === '4up' ? 4 : (options.nupConfig?.pagesPerSheet || 2);
       let rows = 1;
       let cols = 2;
       if (pagesCount === 4) { rows = 2; cols = 2; }
@@ -341,10 +423,14 @@ export class PrintLayoutModel {
         placedHeightMm = docHeightMm;
         effectiveScalePercent = 100;
       } else if (scaleMode === 'custom') {
-        const userPercent = Math.max(10, Math.min(500, options.scalePercent || 100));
-        placedWidthMm = docWidthMm * (userPercent / 100);
-        placedHeightMm = docHeightMm * (userPercent / 100);
-        effectiveScalePercent = userPercent;
+        const pct = (options.scalePercent || 100) / 100;
+        placedWidthMm = docWidthMm * pct;
+        placedHeightMm = docHeightMm * pct;
+        effectiveScalePercent = options.scalePercent || 100;
+      } else if (scaleMode === 'exact' && options.exactWidthMm && options.exactHeightMm) {
+        placedWidthMm = options.exactWidthMm;
+        placedHeightMm = options.exactHeightMm;
+        effectiveScalePercent = Math.round((placedWidthMm / docWidthMm) * 100);
       } else if (scaleMode === 'fill') {
         const scaleX = printableWidthMm / docWidthMm;
         const scaleY = printableHeightMm / docHeightMm;
@@ -355,11 +441,11 @@ export class PrintLayoutModel {
       }
     }
 
-    // Positioning
+    // Auto-Center or Top-Left Alignment
     let placedXMm = printableOriginXMm;
     let placedYMm = printableOriginYMm;
 
-    if (autoCenter) {
+    if (autoCenter && handlingMode !== 'nup') {
       placedXMm = printableOriginXMm + (printableWidthMm - placedWidthMm) / 2;
       placedYMm = printableOriginYMm + (printableHeightMm - placedHeightMm) / 2;
     }
@@ -405,7 +491,7 @@ export class PrintLayoutModel {
   }
 
   /**
-   * Render high-resolution raster canvas with optional Bleed Marks & N-Up Grid
+   * Render high-resolution raster canvas with complete Quality & Paper Profile adjustments
    */
   public static renderToCanvas(
     sourceImageOrCanvas: HTMLImageElement | HTMLCanvasElement,
@@ -427,13 +513,39 @@ export class PrintLayoutModel {
     ctx.imageSmoothingQuality = 'high';
 
     const colorMode = options?.colorMode || 'Color';
+    const quality = options?.quality || 'standard';
+    const qualCfg = PRINT_QUALITY_CONFIG[quality] || PRINT_QUALITY_CONFIG.standard;
+    const paperType = options?.paperType || 'plain';
+    const paperCfg = PAPER_TYPES_CONFIG[paperType] || PAPER_TYPES_CONFIG.plain;
 
-    // 2. Hardware-accelerated Grayscale via ctx.filter (0.2ms GPU execution instead of 2000ms CPU blocking)
+    // 2. Build GPU-accelerated filter string
+    const filters: string[] = [];
+
     if (colorMode === 'Monochrome') {
-      ctx.filter = 'grayscale(100%) contrast(105%)';
+      filters.push('grayscale(100%)');
+      filters.push('contrast(105%)');
     } else {
-      ctx.filter = 'none';
+      if (qualCfg.contrastBoost) {
+        filters.push(`contrast(${Math.round(qualCfg.contrastBoost * 100)}%)`);
+      }
+      if (qualCfg.saturationBoost) {
+        filters.push(`saturate(${Math.round(qualCfg.saturationBoost * 100)}%)`);
+      }
+      if (paperCfg.finish === 'glossy') {
+        filters.push('contrast(103%) saturate(106%)');
+      } else if (paperCfg.finish === 'matte') {
+        filters.push('contrast(102%)');
+      }
     }
+
+    if (options?.colorAdjustment) {
+      const { brightness = 0, contrast = 0, saturation = 0 } = options.colorAdjustment;
+      if (brightness !== 0) filters.push(`brightness(${100 + brightness}%)`);
+      if (contrast !== 0) filters.push(`contrast(${100 + contrast}%)`);
+      if (saturation !== 0 && colorMode !== 'Monochrome') filters.push(`saturate(${100 + saturation}%)`);
+    }
+
+    ctx.filter = filters.length > 0 ? filters.join(' ') : 'none';
 
     // 3. Draw content
     if (layout.gridCells && layout.gridCells.length > 0) {
@@ -486,6 +598,21 @@ export class PrintLayoutModel {
       ctx.moveTo(x2 + offset, y2); ctx.lineTo(x2 + offset + lineLen, y2);
       ctx.moveTo(x2, y2 + offset); ctx.lineTo(x2, y2 + offset + lineLen);
       ctx.stroke();
+    }
+
+    // 5. Watermark (if enabled)
+    if (options?.watermark && options.watermark.enabled && options.watermark.text) {
+      const wm = options.watermark;
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((wm.angle || -45) * Math.PI / 180);
+      ctx.font = `bold ${Math.round((wm.fontSize || 48) * (layout.dpi / 72))}px sans-serif`;
+      ctx.fillStyle = wm.color || '#000000';
+      ctx.globalAlpha = wm.opacity || 0.15;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(wm.text, 0, 0);
+      ctx.restore();
     }
 
     return canvas;

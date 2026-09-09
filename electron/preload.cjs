@@ -25,4 +25,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => ipcRenderer.send('printhub:window-minimize'),
   maximize: () => ipcRenderer.send('printhub:window-maximize'),
   close: () => ipcRenderer.send('printhub:window-close'),
+
+  // Auto-Update Engine
+  getAppVersion: () => ipcRenderer.invoke('printhub:get-app-version'),
+  getUpdaterStatus: () => ipcRenderer.invoke('printhub:get-updater-status'),
+  checkForUpdates: () => ipcRenderer.invoke('printhub:check-for-updates'),
+  startDownloadUpdate: () => ipcRenderer.invoke('printhub:start-download-update'),
+  quitAndInstallUpdate: () => ipcRenderer.invoke('printhub:quit-and-install-update'),
+  onUpdaterStatus: (callback) => {
+    const subscription = (_event, status) => callback(status);
+    ipcRenderer.on('printhub:updater-status', subscription);
+    return () => ipcRenderer.removeListener('printhub:updater-status', subscription);
+  },
 });

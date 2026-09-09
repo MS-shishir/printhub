@@ -28,6 +28,11 @@ export default function ContextMenu({ x, y, isOpen, onClose, onAction }: Context
 
   if (!isOpen) return null;
 
+  const menuWidth = 240;
+  const menuHeight = 360;
+  const clampedX = typeof window !== 'undefined' ? Math.max(8, Math.min(window.innerWidth - menuWidth - 8, x)) : x;
+  const clampedY = typeof window !== 'undefined' ? Math.max(8, Math.min(window.innerHeight - menuHeight - 8, y)) : y;
+
   const menuItems = [
     { id: 'print', label: 'সরাসরি প্রিন্ট প্রিভিউ', icon: Printer, shortcut: 'Ctrl+P' },
     { id: 'optimize', label: 'স্মার্ট সাইজ অপ্টিমাইজার (KB/MB)', icon: Sparkles, shortcut: 'Alt+4' },
@@ -36,14 +41,14 @@ export default function ContextMenu({ x, y, isOpen, onClose, onAction }: Context
     { id: 'pdf', label: 'PDF ফাইলে সেভ করুন', icon: FileText },
     { id: 'duplicate', label: 'ডুপ্লিকেট কপি বানান', icon: Copy },
     { id: 'view', label: 'জুম করে ফুল ভিউ দেখুন', icon: ZoomIn },
-    { id: 'delete', label: 'মুছে ফেলুন', icon: Trash2, color: 'text-rose-400 hover:bg-rose-500/10' },
+    { id: 'delete', label: 'মুছে ফেলুন', icon: Trash2, color: 'text-rose-400 hover:bg-rose-500/15' },
   ];
 
   return (
     <div
       ref={menuRef}
-      style={{ top: `${y}px`, left: `${x}px` }}
-      className="fixed z-50 w-60 bg-slate-900 border border-slate-700/90 rounded-xl shadow-2xl overflow-hidden p-1.5 backdrop-blur-md animate-fade-in"
+      style={{ top: `${clampedY}px`, left: `${clampedX}px` }}
+      className="fixed z-50 w-60 bg-slate-900/98 border border-slate-700/90 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden p-1.5 backdrop-blur-2xl animate-fade-in pointer-events-auto select-none"
     >
       <div className="px-3 py-1.5 text-[11px] font-bold text-slate-400 border-b border-slate-800 uppercase tracking-wider">
         স্টুডিও কুইক অপশন (Right Click)

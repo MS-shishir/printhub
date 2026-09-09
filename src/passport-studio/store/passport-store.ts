@@ -5,6 +5,7 @@ import React, { createContext, useContext, useReducer, useCallback, useMemo, use
 import {
   PassportState, PassportTemplate, LayoutConfig, BackgroundConfig,
   CropArea, FaceDetectionResult, ImageTransform, HistoryEntry, ToastMessage,
+  ProcessedTrayItem,
 } from '../types/passport-types';
 import { getPaperSize } from '../services/template.service';
 
@@ -30,7 +31,9 @@ type PassportAction =
   | { type: 'SET_PROCESSING'; payload: { isProcessing: boolean; message?: string } }
   | { type: 'ADD_TOAST'; payload: ToastMessage }
   | { type: 'REMOVE_TOAST'; payload: string }
-  | { type: 'ADD_TO_PROCESSED_TRAY'; payload: { name: string; croppedUrl: string; templateId: string; widthMm: number; heightMm: number; defaultCopies?: number } }
+  | { type: 'ADD_TO_PROCESSED_TRAY'; payload: { name: string; croppedUrl: string; templateId: string; widthMm: number; heightMm: number; defaultCopies?: number; rotateDegrees?: number } }
+  | { type: 'SET_TRAY_ITEMS'; payload: ProcessedTrayItem[] }
+  | { type: 'UPDATE_TRAY_ITEM'; payload: { id: string; updates: Partial<ProcessedTrayItem> } }
   | { type: 'UPSERT_TRAY_ITEM'; payload: { name?: string; croppedUrl: string; templateId: string; widthMm: number; heightMm: number; defaultCopies?: number } }
   | { type: 'UPDATE_TRAY_ITEM_COPIES'; payload: { id: string; copies: number } }
   | { type: 'TOGGLE_TRAY_ITEM_ROTATION'; payload: string }
@@ -153,10 +156,10 @@ function pushHistory(state: PassportState, nextState: Partial<PassportState>): P
 function passportReducer(state: PassportState, action: PassportAction): PassportState {
   switch (action.type) {
     case 'SET_IMAGE': {
-      const initEntry = {
+      const initEntry: HistoryEntry = {
         transform: initialState.transform,
         cropArea: null,
-        bgConfig: { ...state.bgConfig, isEnabled: true },
+        bgConfig: { ...state.bgConfig, isEnabled: false, type: 'solid' },
         timestamp: Date.now(),
       };
       return {
@@ -170,7 +173,7 @@ function passportReducer(state: PassportState, action: PassportAction): Passport
         autoCropApplied: false,
         faceDetection: null,
         transform: initialState.transform,
-        bgConfig: { ...state.bgConfig, isEnabled: true },
+        bgConfig: { ...state.bgConfig, isEnabled: false, type: 'solid' },
         activeStep: 2,
         activePanel: 'crop',
         history: [initEntry],
@@ -264,14 +267,15 @@ function passportReducer(state: PassportState, action: PassportAction): Passport
 
     case 'ADD_TO_PROCESSED_TRAY': {
       const newItem = {
-        id: `tray_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        name: action.payload.name || 'Processed Photo',
+        id: `tray_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        name: action.payload.name || state.photoName || `Photo #${state.processedTray.length + 1}`,
         croppedUrl: action.payload.croppedUrl,
         templateId: action.payload.templateId,
         widthMm: action.payload.widthMm,
         heightMm: action.payload.heightMm,
         copies: action.payload.defaultCopies || 4,
         addedAt: new Date().toLocaleTimeString(),
+        rotateDegrees: action.payload.rotateDegrees || 0,
       };
       return {
         ...state,
@@ -279,53 +283,66 @@ function passportReducer(state: PassportState, action: PassportAction): Passport
       };
     }
 
+    case 'SET_TRAY_ITEMS': {
+      return {
+        ...state,
+        processedTray: action.payload,
+      };
+    }
+
+    case 'UPDATE_TRAY_ITEM': {
+      return {
+        ...state,
+        processedTray: state.processedTray.map((item) =>
+          item.id === action.payload.id ? { ...item, ...action.payload.updates } : item
+        ),
+      };
+    }
+
     case 'UPSERT_TRAY_ITEM': {
       const payload = action.payload;
-      if (state.processedTray.length <= 1) {
-        const existing = state.processedTray[0];
-        const updatedItem = {
-          id: existing?.id || `tray_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          name: payload.name || state.photoName || existing?.name || 'Processed Photo',
-          croppedUrl: payload.croppedUrl,
-          templateId: payload.templateId,
-          widthMm: payload.widthMm,
-          heightMm: payload.heightMm,
-          copies: existing?.copies || payload.defaultCopies || state.layoutConfig.copies || 4,
-          addedAt: existing?.addedAt || new Date().toLocaleTimeString(),
-          rotateDegrees: existing?.rotateDegrees || 0,
-        };
+      const itemName = payload.name || (state.photoName ? `${state.photoName} (${payload.templateId})` : `Photo #${state.processedTray.length + 1}`);
+      const newItem = {
+        id: `tray_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        name: itemName,
+        croppedUrl: payload.croppedUrl,
+        templateId: payload.templateId,
+        widthMm: payload.widthMm,
+        heightMm: payload.heightMm,
+        copies: payload.defaultCopies || state.layoutConfig.copies || 4,
+        addedAt: new Date().toLocaleTimeString(),
+        rotateDegrees: 0,
+      };
+
+      if (state.processedTray.length === 0) {
         return {
           ...state,
-          processedTray: [updatedItem],
+          processedTray: [newItem],
         };
-      } else {
-        const existingIdx = state.processedTray.findIndex(
-          (item) => item.name === (payload.name || state.photoName)
-        );
-        if (existingIdx !== -1) {
-          const newTray = [...state.processedTray];
-          newTray[existingIdx] = {
-            ...newTray[existingIdx],
-            croppedUrl: payload.croppedUrl,
-            templateId: payload.templateId,
-            widthMm: payload.widthMm,
-            heightMm: payload.heightMm,
-          };
-          return { ...state, processedTray: newTray };
-        } else {
-          const newItem = {
-            id: `tray_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-            name: payload.name || state.photoName || `Photo #${state.processedTray.length + 1}`,
-            croppedUrl: payload.croppedUrl,
-            templateId: payload.templateId,
-            widthMm: payload.widthMm,
-            heightMm: payload.heightMm,
-            copies: payload.defaultCopies || 4,
-            addedAt: new Date().toLocaleTimeString(),
-          };
-          return { ...state, processedTray: [...state.processedTray, newItem] };
-        }
       }
+
+      // If an item with same templateId AND same photo name/url already exists, update it
+      const existingIdx = state.processedTray.findIndex(
+        (item) => item.templateId === payload.templateId && (item.name === itemName || item.croppedUrl === payload.croppedUrl)
+      );
+
+      if (existingIdx !== -1) {
+        const newTray = [...state.processedTray];
+        newTray[existingIdx] = {
+          ...newTray[existingIdx],
+          croppedUrl: payload.croppedUrl,
+          widthMm: payload.widthMm,
+          heightMm: payload.heightMm,
+          name: itemName,
+        };
+        return { ...state, processedTray: newTray };
+      }
+
+      // Different photo or different size -> append as a new card in the tray!
+      return {
+        ...state,
+        processedTray: [...state.processedTray, newItem],
+      };
     }
 
     case 'UPDATE_TRAY_ITEM_COPIES': {

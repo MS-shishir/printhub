@@ -9,17 +9,9 @@
  * 4. Automatic Corner Sorting & Geometric Aspect-Ratio Ratio Preservation
  */
 
-export interface Point2D {
-  x: number;
-  y: number;
-}
+import { Point2D, DocumentQuad } from './crop/CropTypes';
 
-export interface DocumentQuad {
-  tl: Point2D; // Top-Left
-  tr: Point2D; // Top-Right
-  br: Point2D; // Bottom-Right
-  bl: Point2D; // Bottom-Left
-}
+export type { Point2D, DocumentQuad };
 
 export class PerspectiveWarpEngine {
   /**

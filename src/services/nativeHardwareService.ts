@@ -33,7 +33,13 @@ export interface PrintDirectOptions {
   color?: boolean;
   duplexMode?: 'simplex' | 'longEdge' | 'shortEdge';
   scaleFactor?: number;
-  dpi?: { horizontal: number; vertical: number };
+  dpi?: { horizontal: number; vertical: number } | number;
+  paperType?: string;
+  quality?: string;
+  multiPage?: string;
+  collate?: boolean;
+  reverseOrder?: boolean;
+  quietMode?: boolean;
   dataUrl?: string;
   htmlContent?: string;
   margins?: { marginType: string; top?: number; bottom?: number; left?: number; right?: number };
@@ -71,12 +77,42 @@ declare global {
 // Simulated fallback printers for Web / Browser Development environment
 const MOCK_WINDOWS_PRINTERS: NativePrinter[] = [
   {
+    name: 'EPSON L8050 Series',
+    displayName: 'EPSON L8050 Series (6-Color Photo InkTank)',
+    description: 'High-Definition 6-Color Photo & PVC ID Card Printer',
+    isDefault: true,
+    status: 'Ready',
+    isOffline: false,
+    capabilities: {
+      color: true,
+      duplex: false,
+      copies: true,
+      collate: true,
+      paperSizes: ['A4', '4R', 'Legal', 'Letter', 'A5', 'Stamp', 'Custom'],
+    },
+  },
+  {
+    name: 'EPSON L3250 Series',
+    displayName: 'EPSON L3250 Series (Wi-Fi EcoTank)',
+    description: 'All-in-One InkTank Color Printer',
+    isDefault: false,
+    status: 'Ready',
+    isOffline: false,
+    capabilities: {
+      color: true,
+      duplex: false,
+      copies: true,
+      collate: true,
+      paperSizes: ['A4', '4R', 'Legal', 'Letter', 'A5', 'Stamp', 'Custom'],
+    },
+  },
+  {
     name: 'Canon LBP6230/6240',
     displayName: 'Canon LBP6230/6240 Laser Printer',
     description: 'High-Speed Auto-Duplex Laser Printer',
-    isDefault: true,
-    status: 'Offline',
-    isOffline: true,
+    isDefault: false,
+    status: 'Ready',
+    isOffline: false,
     capabilities: {
       color: false, // Monochrome laser
       duplex: true, // Hardware Auto-Duplex
@@ -180,22 +216,139 @@ class NativeHardwareService {
   }
 
   /**
-   * Send silent or direct print to hardware printer without opening OS print dialog
+   * Send silent or direct print to hardware printer without opening OS print dialog (Electron)
+   * or open high-precision native browser print dialog (Web)
    */
   public async printDirect(options: PrintDirectOptions): Promise<PrintJobResult> {
     if (this.isDesktop() && window.electronAPI) {
       return window.electronAPI.printDirect({
-        silent: options.silent !== false, // Always defaults to silent direct print
+        silent: options.silent !== false, // Always defaults to silent direct print in Electron
         ...options,
       });
     }
 
-    // Browser simulation
-    await new Promise(r => setTimeout(r, 600));
-    return {
-      success: true,
-      deviceName: options.deviceName || 'Virtual Print Spooler',
-    };
+    // Web Browser execution: real iframe-based 1:1 print
+    return this.printInBrowser(options);
+  }
+
+  /**
+   * Real browser print execution using an isolated hidden high-DPI iframe
+   */
+  private async printInBrowser(options: PrintDirectOptions): Promise<PrintJobResult> {
+    return new Promise((resolve) => {
+      try {
+        const {
+          dataUrl,
+          htmlContent,
+          pageSize = 'A4',
+          landscape = false,
+          color = true,
+        } = options;
+
+        const isLand = Boolean(landscape);
+        const pw = pageSize === '4R' ? (isLand ? '152mm' : '102mm') : pageSize === 'Legal' ? (isLand ? '356mm' : '216mm') : pageSize === 'Letter' ? (isLand ? '279mm' : '216mm') : pageSize === 'A5' ? (isLand ? '210mm' : '148mm') : (isLand ? '297mm' : '210mm');
+        const ph = pageSize === '4R' ? (isLand ? '102mm' : '152mm') : pageSize === 'Legal' ? (isLand ? '216mm' : '356mm') : pageSize === 'Letter' ? (isLand ? '216mm' : '279mm') : pageSize === 'A5' ? (isLand ? '148mm' : '210mm') : (isLand ? '210mm' : '297mm');
+
+        const isGrayscale = color === false;
+
+        let iframe = document.getElementById('printhub-browser-print-iframe') as HTMLIFrameElement;
+        if (!iframe) {
+          iframe = document.createElement('iframe');
+          iframe.id = 'printhub-browser-print-iframe';
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0px';
+          iframe.style.height = '0px';
+          iframe.style.border = 'none';
+          iframe.style.zIndex = '-99999';
+          iframe.style.visibility = 'hidden';
+          document.body.appendChild(iframe);
+        }
+
+        const doc = iframe.contentWindow?.document || iframe.contentDocument;
+        if (!doc) {
+          resolve({ success: false, error: 'Could not access browser print frame.' });
+          return;
+        }
+
+        const pageHtml = htmlContent || `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>PrintHub Studio</title>
+            <style>
+              @page {
+                size: ${pw} ${ph};
+                margin: 0mm !important;
+              }
+              *, *:before, *:after {
+                margin: 0 !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
+              }
+              html, body {
+                width: ${pw} !important;
+                height: ${ph} !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                overflow: hidden !important;
+              }
+              img#printSheetImg {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: ${pw} !important;
+                height: ${ph} !important;
+                display: block !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                object-fit: fill !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                ${isGrayscale ? 'filter: grayscale(100%) contrast(105%);' : ''}
+              }
+            </style>
+          </head>
+          <body>
+            <img id="printSheetImg" src="${dataUrl}" />
+          </body>
+          </html>
+        `;
+
+        doc.open();
+        doc.write(pageHtml);
+        doc.close();
+
+        const imgEl = doc.getElementById('printSheetImg') as HTMLImageElement;
+        const triggerPrint = () => {
+          setTimeout(() => {
+            try {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+              resolve({ success: true, deviceName: 'Browser Native Spooler' });
+            } catch (err: any) {
+              resolve({ success: false, error: err?.message || 'Browser print failed.' });
+            }
+          }, 300);
+        };
+
+        if (imgEl) {
+          if (imgEl.complete && imgEl.naturalWidth > 0) {
+            triggerPrint();
+          } else {
+            imgEl.onload = triggerPrint;
+            imgEl.onerror = triggerPrint;
+          }
+        } else {
+          triggerPrint();
+        }
+      } catch (e: any) {
+        resolve({ success: false, error: e?.message || 'Browser print execution failed.' });
+      }
+    });
   }
 
   /**
