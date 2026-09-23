@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Printer Management
   getPrinters: () => ipcRenderer.invoke('printhub:get-printers'),
   printDirect: (options) => ipcRenderer.invoke('printhub:print-direct', options),
+  openPrinterProperties: (printerName) => ipcRenderer.invoke('printhub:open-printer-properties', printerName),
 
   // Scanner Hot Folder Watcher
   selectScanFolder: () => ipcRenderer.invoke('printhub:select-scan-folder'),
@@ -37,4 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('printhub:updater-status', subscription);
     return () => ipcRenderer.removeListener('printhub:updater-status', subscription);
   },
+
+  // Native PDF Rasterizer
+  renderPdfPages: (options) => ipcRenderer.invoke('printhub:render-pdf-pages', options),
 });

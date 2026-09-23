@@ -209,6 +209,19 @@ export default function TemplatePanel({ onGetCroppedUrl }: TemplatePanelProps) {
     const baseName = state.photoName ? state.photoName.replace(/\.[^/.]+$/, "") : 'Photo';
     const itemName = `${baseName} (${currentTemplate.name})`;
 
+    let smartCopies = 4;
+    if (currentTemplate.category === 'album') {
+      if (activeW >= 200 && activeH >= 280) {
+        smartCopies = 1; // A4 Full Size
+      } else if ((activeW >= 140 && activeH >= 200) || (activeW >= 200 && activeH >= 140)) {
+        smartCopies = 2; // A4 Half Size / A5
+      } else if (activeW >= 100 && activeH >= 140) {
+        smartCopies = 4; // A4 Quarter / 4R
+      } else {
+        smartCopies = 1;
+      }
+    }
+
     dispatch({
       type: 'UPSERT_TRAY_ITEM',
       payload: {
@@ -217,7 +230,7 @@ export default function TemplatePanel({ onGetCroppedUrl }: TemplatePanelProps) {
         templateId: selected,
         widthMm: activeW,
         heightMm: activeH,
-        defaultCopies: 4,
+        defaultCopies: smartCopies,
       },
     });
 

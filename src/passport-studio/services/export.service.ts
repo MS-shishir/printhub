@@ -67,7 +67,7 @@ export async function exportPDF(
   const pageHeightPt = mmToPt(paperHMm);
   const page = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
 
-  const itemsToExport = Array.isArray(sharedLayoutState.items)
+  const itemsToExport = (Array.isArray(sharedLayoutState.items) && sharedLayoutState.items.length > 0)
     ? sharedLayoutState.items
     : (imageDataUrl ? layout.placed.map((place, idx) => ({
         id: `single_${idx}`,
@@ -225,7 +225,7 @@ export async function renderPassportSheetCanvas300Dpi(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  const itemsToPrint = Array.isArray(sharedLayoutState.items)
+  const itemsToPrint = (Array.isArray(sharedLayoutState.items) && sharedLayoutState.items.length > 0)
     ? sharedLayoutState.items
     : (imageDataUrl ? layout.placed.map((place, idx) => ({
         id: `single_${idx}`,
@@ -240,19 +240,34 @@ export async function renderPassportSheetCanvas300Dpi(
 
   // Cache loaded images
   const imageMap = new Map<string, HTMLImageElement>();
+  const urlsToLoad = new Set<string>();
+  if (imageDataUrl) urlsToLoad.add(imageDataUrl);
   for (const item of itemsToPrint) {
-    if (!imageMap.has(item.url)) {
+    if (item.url) urlsToLoad.add(item.url);
+  }
+
+  for (const url of urlsToLoad) {
+    if (!imageMap.has(url)) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       await new Promise<void>((resolve) => {
+        if (img.complete && img.naturalWidth > 0) {
+          imageMap.set(url, img);
+          resolve();
+          return;
+        }
         img.onload = () => {
-          imageMap.set(item.url, img);
+          imageMap.set(url, img);
           resolve();
         };
         img.onerror = () => {
           resolve();
         };
-        img.src = item.url;
+        img.src = url;
+        if (img.complete && img.naturalWidth > 0) {
+          imageMap.set(url, img);
+          resolve();
+        }
       });
     }
   }
@@ -273,7 +288,7 @@ export async function renderPassportSheetCanvas300Dpi(
     ctx.fillRect(x, y, w, h);
 
     // 2. Draw photo
-    const img = imageMap.get(item.url);
+    const img = imageMap.get(item.url) || imageMap.get(imageDataUrl);
     if (img) {
       if (item.rotateDegrees === 90) {
         ctx.save();

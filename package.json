@@ -1,8 +1,8 @@
 {
   "name": "printhub-studio",
-  "productName": "PrintHub Studio",
-  "version": "1.1.0",
-  "description": "PrintHub Studio — Professional Photo & Document Print Suite",
+  "productName": "PrintHub Studio Pro",
+  "version": "1.2.0",
+  "description": "PrintHub Studio Pro — Professional Photo & Document Print Suite",
   "author": "PrintHub Studio",
   "private": true,
   "main": "electron/main.cjs",
@@ -11,7 +11,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build --emptyOutDir",
     "preview": "vite preview",
-    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive:true, force:true}); fs.rmSync('release', {recursive:true, force:true});\"",
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive:true, force:true}); fs.rmSync('build_release', {recursive:true, force:true});\"",
     "lint": "tsc --noEmit",
     "test": "tsx src/tests/run-tests.ts",
     "electron:dev": "concurrently -k \"vite --port=3000 --host=0.0.0.0\" \"wait-on http://localhost:3000 && electron .\"",
@@ -22,13 +22,17 @@
   },
   "build": {
     "appId": "com.printhub.studio",
-    "productName": "PrintHub Studio",
-    "copyright": "Copyright © 2026 PrintHub Studio",
+    "productName": "PrintHub Studio Pro",
+    "copyright": "Copyright © 2026 PrintHub Studio Pro",
     "npmRebuild": false,
     "asar": true,
     "directories": {
-      "output": "release"
+      "output": "build_release"
     },
+    "asarUnpack": [
+      "**/node_modules/@hyzyla/pdfium/**/*",
+      "**/electron/bin/**/*"
+    ],
     "publish": [
       {
         "provider": "github",
@@ -39,21 +43,27 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "public/**/*"
+      "public/**/*",
+      "node_modules/@hyzyla/pdfium/**/*",
+      "node_modules/electron-updater/**/*",
+      "node_modules/electron-log/**/*"
     ],
     "win": {
-      "icon": "public/logo.png",
+      "icon": "public/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PrintHub Studio"
+      "shortcutName": "PrintHub Studio Pro",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
     }
   },
   "dependencies": {

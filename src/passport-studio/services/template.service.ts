@@ -46,10 +46,14 @@ export function removeTemplate(id: string): boolean {
 // ── Paper Sizes ────────────────────────────────────────────────────────────
 export const PAPER_SIZES: PaperSize[] = [
   { id: 'a4',     name: 'A4 (210×297mm)',        widthMm: 210,   heightMm: 297   },
-  { id: 'letter', name: 'Letter (216×279mm)',     widthMm: 215.9, heightMm: 279.4 },
+  { id: 'legal',  name: 'Legal (216×356mm)',     widthMm: 215.9, heightMm: 355.6 },
   { id: '4r',     name: '4R Photo (102×152mm)',   widthMm: 101.6, heightMm: 152.4 },
   { id: '5r',     name: '5R Photo (127×178mm)',   widthMm: 127.0, heightMm: 177.8 },
-  { id: 'custom', name: 'Custom Size',            widthMm: 210,   heightMm: 297   },
+  { id: '6r',     name: '6R Photo (152×203mm)',   widthMm: 152.4, heightMm: 203.2 },
+  { id: '8r',     name: '8R Photo (203×254mm)',   widthMm: 203.2, heightMm: 254.0 },
+  { id: 'a3',     name: 'A3 (297×420mm)',        widthMm: 297.0, heightMm: 420.0 },
+  { id: 'letter', name: 'Letter (216×279mm)',     widthMm: 215.9, heightMm: 279.4 },
+  { id: 'custom', name: 'Custom Sheet',          widthMm: 210,   heightMm: 297   },
 ];
 
 export function getPaperSize(id: string): PaperSize {

@@ -30,16 +30,21 @@ export function calculateLayout(
   const usableW = Math.max(0, paperW - leftMargin - rightMargin);
   const usableH = Math.max(0, paperH - topMargin - botMargin);
 
-  // Max columns and rows that fit
-  const cols = Math.max(1, Math.floor((usableW + gap) / (photoW + gap)));
-  const rows = Math.max(1, Math.floor((usableH + gap) / (photoH + gap)));
-  const maxFit = cols * rows;
+  // Calculate standard grid cols & rows
+  let cols = Math.floor((usableW + gap) / (photoW + gap));
+  let rows = Math.floor((usableH + gap) / (photoH + gap));
+
+  // If photo is large (e.g. A4 full size or album page) and fits on paper sheet:
+  if (cols < 1 && photoW <= paperW) cols = 1;
+  if (rows < 1 && photoH <= paperH) rows = 1;
+
+  const maxFit = Math.max(1, cols * rows);
 
   // Actual copies to place (capped by what fits)
-  const toPaint = Math.min(config.copies, maxFit);
-  const actualRows = Math.ceil(toPaint / cols);
+  const toPaint = Math.min(config.copies || 1, maxFit);
+  const actualRows = Math.ceil(toPaint / Math.max(1, cols));
 
-  // Compute grid offsets based on alignment preference (top-left by default)
+  // Compute grid offsets based on alignment preference
   const gridW = cols * photoW + (cols - 1) * gap;
   const gridH = actualRows * photoH + (actualRows - 1) * gap;
 
@@ -48,15 +53,19 @@ export function calculateLayout(
 
   const align = config.alignPos || 'top-left';
 
-  if (align === 'top-center') {
-    startX = Math.max(leftMargin, (paperW - gridW) / 2);
-    startY = topMargin;
-  } else if (align === 'center') {
-    startX = Math.max(leftMargin, (paperW - gridW) / 2);
-    startY = Math.max(topMargin, (paperH - gridH) / 2);
+  if (cols === 1 && photoW >= usableW) {
+    startX = Math.max(0, (paperW - photoW) / 2);
+  } else if (align === 'top-center' || align === 'center') {
+    startX = Math.max(0, (paperW - gridW) / 2);
   } else {
-    // top-left (default studio print layout starting from margins)
     startX = leftMargin;
+  }
+
+  if (actualRows === 1 && photoH >= usableH) {
+    startY = Math.max(0, (paperH - photoH) / 2);
+  } else if (align === 'center') {
+    startY = Math.max(0, (paperH - gridH) / 2);
+  } else {
     startY = topMargin;
   }
 
@@ -105,9 +114,13 @@ export function maxCopiesThatFit(
 
   const usableW = Math.max(0, paperW - leftMargin - rightMargin);
   const usableH = Math.max(0, paperH - topMargin - botMargin);
-  const cols = Math.max(1, Math.floor((usableW + gap) / (photoW + gap)));
-  const rows = Math.max(1, Math.floor((usableH + gap) / (photoH + gap)));
-  return cols * rows;
+  let cols = Math.floor((usableW + gap) / (photoW + gap));
+  let rows = Math.floor((usableH + gap) / (photoH + gap));
+
+  if (cols < 1 && photoW <= paperW) cols = 1;
+  if (rows < 1 && photoH <= paperH) rows = 1;
+
+  return Math.max(1, cols * rows);
 }
 
 /**

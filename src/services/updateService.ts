@@ -40,7 +40,7 @@ type UpdateListener = (state: UpdateState) => void;
 class UpdateService {
   private state: UpdateState = {
     status: 'idle',
-    currentVersion: '1.1.0',
+    currentVersion: '1.2.0',
     info: null,
     progress: null,
     error: null,

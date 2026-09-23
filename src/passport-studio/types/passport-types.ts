@@ -7,7 +7,7 @@ export type AppLanguage = 'bn' | 'en';
 export type ToolMode = 'select' | 'crop' | 'move' | 'zoom' | 'eyedropper';
 export type ExportFormat = 'png' | 'jpeg' | 'pdf' | 'print';
 export type BackgroundType = 'solid' | 'gradient' | 'removed' | 'ai_removed';
-export type PaperSizeId = 'a4' | 'letter' | '4r' | '5r' | 'custom';
+export type PaperSizeId = 'a4' | 'letter' | 'legal' | '4r' | '5r' | '6r' | '8r' | 'a3' | 'custom' | string;
 export type CopyCount = 1 | 2 | 4 | 6 | 8 | 12 | 16;
 
 // ─── Template ────────────────────────────────────────────────

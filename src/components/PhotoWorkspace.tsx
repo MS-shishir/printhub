@@ -2386,3 +2386,4 @@ export default function PhotoWorkspace({ onAddRecentFile, language }: PhotoWorks
     </div>
   );
 }
+

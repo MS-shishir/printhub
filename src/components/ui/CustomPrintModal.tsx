@@ -28,7 +28,7 @@ import {
   Layers, Copy, ShieldCheck, DollarSign, Settings, Grid, BookOpen,
   ChevronLeft, ChevronRight, Crop, Eye, FileSpreadsheet, Info,
   Droplet, Gauge, Wrench, BookmarkPlus, Trash2, SlidersHorizontal,
-  Volume2, VolumeX, ArrowLeftRight, HelpCircle, FileCheck
+  Volume2, VolumeX, ArrowLeftRight, HelpCircle, FileCheck, ExternalLink
 } from 'lucide-react';
 import {
   PrintLayoutModel,
@@ -391,21 +391,31 @@ export default function CustomPrintModal({
     const resolveSources = () => {
       const isSheetType = (w: number, t: string) => {
         const lowerT = (t || '').toLowerCase();
-        return lowerT.includes('sheet') || lowerT.includes('printsheet') || lowerT.includes('passport') || lowerT.includes('nid') || w >= 1000;
+        return lowerT.includes('sheet') || lowerT.includes('printsheet') || lowerT.includes('passport') || lowerT.includes('nid') || lowerT.includes('document') || lowerT.includes('doc') || w >= 1000;
       };
 
       if (sourceImageOrCanvas) {
         if (typeof sourceImageOrCanvas === 'string') {
           setDocPages([sourceImageOrCanvas]);
           const img = new Image();
-          img.onload = () => {
-            setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
-            if (isSheetType(img.naturalWidth, title)) {
+          const onImgReady = () => {
+            const w = img.naturalWidth || 2480;
+            const h = img.naturalHeight || 3508;
+            setSourceDimensions({ width: w, height: h });
+            if (isSheetType(w, title)) {
               setMargins({ topMm: 0, bottomMm: 0, leftMm: 0, rightMm: 0 });
               setScaleMode('fit');
             }
           };
+          if (img.complete && img.naturalWidth > 0) {
+            onImgReady();
+          } else {
+            img.onload = onImgReady;
+          }
           img.src = sourceImageOrCanvas;
+          if (img.complete && img.naturalWidth > 0) {
+            onImgReady();
+          }
           return;
         } else if (sourceImageOrCanvas instanceof HTMLCanvasElement) {
           setSourceDimensions({ width: sourceImageOrCanvas.width, height: sourceImageOrCanvas.height });
@@ -416,9 +426,11 @@ export default function CustomPrintModal({
           }
           return;
         } else if (sourceImageOrCanvas instanceof HTMLImageElement) {
-          setSourceDimensions({ width: sourceImageOrCanvas.naturalWidth, height: sourceImageOrCanvas.naturalHeight });
+          const w = sourceImageOrCanvas.naturalWidth || 2480;
+          const h = sourceImageOrCanvas.naturalHeight || 3508;
+          setSourceDimensions({ width: w, height: h });
           setDocPages([sourceImageOrCanvas.src]);
-          if (isSheetType(sourceImageOrCanvas.naturalWidth, title)) {
+          if (isSheetType(w, title)) {
             setMargins({ topMm: 0, bottomMm: 0, leftMm: 0, rightMm: 0 });
             setScaleMode('fit');
           }
@@ -431,6 +443,10 @@ export default function CustomPrintModal({
         const cv = sharedPrintCanvasRef.current;
         setSourceDimensions({ width: cv.width, height: cv.height });
         setDocPages([cv.toDataURL('image/png', 0.98)]);
+        if (isSheetType(cv.width, title)) {
+          setMargins({ topMm: 0, bottomMm: 0, leftMm: 0, rightMm: 0 });
+          setScaleMode('fit');
+        }
         return;
       }
 
@@ -452,12 +468,15 @@ export default function CustomPrintModal({
         }
       }
 
-      // 4. Any visible canvas in the DOM
-      const domCanvases = Array.from(document.querySelectorAll('canvas'));
-      const activeCanvas = domCanvases.find((c) => c.width > 200 && c.height > 200 && c.offsetParent !== null) || domCanvases[0];
-      if (activeCanvas && activeCanvas.width > 0) {
-        setSourceDimensions({ width: activeCanvas.width, height: activeCanvas.height });
-        setDocPages([activeCanvas.toDataURL('image/png', 0.98)]);
+      // 4. Any visible canvas in the DOM (only if not a passport sheet)
+      const lowerTitle = (title || '').toLowerCase();
+      if (!lowerTitle.includes('passport') && !lowerTitle.includes('sheet')) {
+        const domCanvases = Array.from(document.querySelectorAll('canvas'));
+        const activeCanvas = domCanvases.find((c) => c.width > 200 && c.height > 200 && c.offsetParent !== null) || domCanvases[0];
+        if (activeCanvas && activeCanvas.width > 0) {
+          setSourceDimensions({ width: activeCanvas.width, height: activeCanvas.height });
+          setDocPages([activeCanvas.toDataURL('image/png', 0.98)]);
+        }
       }
     };
 
@@ -543,11 +562,19 @@ export default function CustomPrintModal({
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    const onReady = () => {
       cachedImageRef.current = img;
       renderPreview();
     };
+    if (img.complete && img.naturalWidth > 0) {
+      onReady();
+    } else {
+      img.onload = onReady;
+    }
     img.src = activePageDataUrl;
+    if (img.complete && img.naturalWidth > 0) {
+      onReady();
+    }
   }, [activePageDataUrl, isOpen]);
 
   const renderPreview = useCallback(() => {
@@ -1135,10 +1162,18 @@ export default function CustomPrintModal({
                 </div>
 
                 <button
-                  onClick={() => setIsPropertiesModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold border border-slate-700 transition cursor-pointer"
+                  onClick={() => {
+                    if (nativeHardwareService.isDesktop() && selectedPrinterName) {
+                      nativeHardwareService.openPrinterProperties(selectedPrinterName);
+                    } else {
+                      setIsPropertiesModalOpen(true);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold border border-slate-700 transition cursor-pointer flex items-center gap-1.5"
+                  title="Open Windows Native Driver Preferences"
                 >
-                  Properties
+                  <Settings className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Properties</span>
                 </button>
 
                 <button
@@ -2539,10 +2574,20 @@ export default function CustomPrintModal({
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2 flex items-center justify-between gap-2">
+              <button
+                onClick={() => {
+                  nativeHardwareService.openPrinterProperties(selectedPrinterName);
+                  setIsPropertiesModalOpen(false);
+                }}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl border border-slate-700 transition cursor-pointer flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Windows Driver Preferences</span>
+              </button>
               <button
                 onClick={() => setIsPropertiesModalOpen(false)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition"
+                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition cursor-pointer"
               >
                 Close
               </button>

@@ -7,6 +7,7 @@ import { usePassportStore } from '../store';
 import { useFaceDetection } from './useFaceDetection';
 import { getTemplate } from '../services/template.service';
 import {
+  removeBackgroundAI,
   removeBackgroundClassical,
   sampleCornerBackgroundColor,
   enhancePhotoTo4K,
@@ -167,7 +168,7 @@ export function usePassportWorkflow() {
     bgDebounce.current = setTimeout(async () => {
       try {
         dispatch({ type: 'SET_PROCESSING', payload: { isProcessing: true, message: '✨ Removing Background…' } });
-        const result = await removeBackgroundClassical(rawImg, {
+        const result = await removeBackgroundAI(rawImg, {
           tolerance: state.bgConfig.tolerance,
           keyColor: state.bgConfig.keyColor,
           edgeRadius: Math.max(1, Math.min(5, Math.round(state.bgConfig.feather / 2))),

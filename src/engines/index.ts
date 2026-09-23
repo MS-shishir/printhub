@@ -20,3 +20,4 @@ export * from './DeformationEngine';
 export * from './HeadStraightenerEngine';
 export * from './PdfEngine';
 export * from './SideReconstructionEngine';
+export * from './MattingEngine';

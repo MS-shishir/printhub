@@ -12,7 +12,7 @@
 // 10. High-DPI Transparent PNG Output
 
 import { removeBackgroundViaFastAPI, checkFastAPIBackendHealth, enhanceImageViaFastAPI } from '../../services/fastapiBgRemoval';
-import { segmentPortraitWithMediaPipe } from './selfie-segmentation.service';
+import { segmentPortraitWithMediaPipe, segmentPortraitWithISNet } from './selfie-segmentation.service';
 import { BackgroundConfig, FaceDetectionResult } from '../types/passport-types';
 import {
   RGB,
@@ -402,29 +402,40 @@ export async function removeBackgroundClassical(
 
 /**
  * Universal Background Removal Pipeline:
- * Directs to Classical CV Matting Engine (100% Offline, Pure Mathematical Image Processing).
+ * 1. FastAPI BiRefNet / RMBG-2.0 (if Python backend is running)
+ * 2. Client-Side IS-Net / RMBG (via WebAssembly/WebGPU)
+ * 3. Client-Side MediaPipe Neural Segmentation + 15-Stage Guided Filter MattingEngine
+ * 4. Classical Mathematical Color Matting Fallback
  */
 export async function removeBackgroundAI(
   src: string,
   options: AIRemovalOptions = {}
 ): Promise<string> {
-  // If user requested FastAPI BiRefNet/RMBG-2.0 and server is explicitly reachable:
-  if (options.useFastAPI) {
-    try {
-      const isBackendAvailable = await checkFastAPIBackendHealth();
-      if (isBackendAvailable) {
-        return await removeBackgroundViaFastAPI(src, {
-          model: options.model === 'rmbg' ? 'rmbg' : 'birefnet',
-          refine: true,
-          enhance: options.enhance ?? false
-        });
-      }
-    } catch (fastApiErr) {
-      console.warn('[FastAPI Offline / Classical CV Active]', fastApiErr);
+  // 1. If FastAPI backend is active (BiRefNet / RMBG-2.0):
+  try {
+    const isBackendAvailable = await checkFastAPIBackendHealth();
+    if (isBackendAvailable) {
+      return await removeBackgroundViaFastAPI(src, {
+        model: options.model === 'rmbg' ? 'rmbg' : 'birefnet',
+        refine: true,
+        enhance: options.enhance ?? false
+      });
     }
+  } catch (fastApiErr) {
+    console.warn('[FastAPI Offline / Client-Side Neural Pipeline Active]', fastApiErr);
   }
 
-  // Pure Classical Computer Vision & Matting Engine (100% Offline, No AI)
+  // 2. Client-Side IS-Net Neural Background Removal
+  try {
+    const isNetResult = await segmentPortraitWithISNet(src);
+    if (isNetResult) {
+      return isNetResult;
+    }
+  } catch (isNetErr) {
+    console.warn('[IS-Net fallback to MediaPipe Guided Filter]', isNetErr);
+  }
+
+  // 3. Client-Side MediaPipe Neural Segmentation + 15-Stage Guided Filter Engine
   return await removeBackgroundClassical(src, options);
 }
 

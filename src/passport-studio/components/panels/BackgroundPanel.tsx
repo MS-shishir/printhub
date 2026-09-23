@@ -33,11 +33,11 @@ export default function BackgroundPanel() {
 
     dispatch({
       type: 'SET_PROCESSING',
-      payload: { isProcessing: true, message: '✨ Running High-Precision Classical CV Matting…' }
+      payload: { isProcessing: true, message: '🧠 Running Advanced AI Neural Matting…' }
     });
 
     try {
-      const transparentPng = await removeBackgroundClassical(targetImg, {
+      const transparentPng = await removeBackgroundAI(targetImg, {
         tolerance: bgConfig.tolerance ?? 38,
         edgeQuality,
         edgeRadius: edgeQuality === 'maximum' ? 3 : edgeRadius,

@@ -329,8 +329,18 @@ export default function App() {
 
           {/* Quick Print Preview */}
           <button
-            onClick={() => setIsPrintPreviewOpen(true)}
-            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-md transition"
+            onClick={() => {
+              if (activeModule === 'passport') {
+                window.dispatchEvent(new CustomEvent('printhub:trigger-passport-print'));
+              } else if (activeModule === 'document') {
+                window.dispatchEvent(new CustomEvent('printhub:trigger-document-print'));
+              } else if (activeModule === 'photo') {
+                window.dispatchEvent(new CustomEvent('printhub:open-photo-export'));
+              } else {
+                setIsPrintPreviewOpen(true);
+              }
+            }}
+            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-md transition cursor-pointer"
             title={language === 'bn' ? 'প্রিন্ট প্রিভিউ (Ctrl+P)' : 'Print Preview (Ctrl+P)'}
           >
             <Printer className="w-4 h-4" />

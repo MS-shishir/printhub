@@ -66,7 +66,7 @@ function PassportStudioInner({ onAddRecentFile }: PassportStudioProps) {
         const { getTemplate } = await import('../services/template.service');
         const { printPassportSheet } = await import('../services/export.service');
         const defaultTemplate = getTemplate(state.selectedTemplateId, state.customWidth, state.customHeight);
-        printPassportSheet(defaultImage, defaultTemplate, state.layoutConfig, state.bgConfig.color);
+        await printPassportSheet(defaultImage, defaultTemplate, state.layoutConfig, state.bgConfig.color);
       } else {
         dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'export' });
       }
@@ -191,8 +191,19 @@ function PassportStudioInner({ onAddRecentFile }: PassportStudioProps) {
           </button>
           <div className="w-px h-5 bg-slate-800" />
           <button
-            onClick={() => dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'export' })}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md">
+            onClick={async () => {
+              const defaultImage = state.croppedImage || state.processedImage || state.originalImage;
+              if (defaultImage) {
+                const { getTemplate } = await import('../services/template.service');
+                const { printPassportSheet } = await import('../services/export.service');
+                const defaultTemplate = getTemplate(state.selectedTemplateId, state.customWidth, state.customHeight);
+                await printPassportSheet(defaultImage, defaultTemplate, state.layoutConfig, state.bgConfig.color);
+              } else {
+                dispatch({ type: 'SET_ACTIVE_PANEL', payload: 'export' });
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md cursor-pointer"
+          >
             🖨 Print
           </button>
         </div>

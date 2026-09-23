@@ -64,6 +64,7 @@ declare global {
       isElectron: boolean;
       getPrinters: () => Promise<NativePrinter[]>;
       printDirect: (options: PrintDirectOptions) => Promise<PrintJobResult>;
+      openPrinterProperties?: (printerName: string) => Promise<boolean>;
       selectScanFolder: () => Promise<string | null>;
       getScanFolder: () => Promise<string>;
       onNewScan: (callback: (data: NewScanEvent) => void) => () => void;
@@ -216,10 +217,11 @@ class NativeHardwareService {
   }
 
   /**
-   * Send silent or direct print to hardware printer without opening OS print dialog (Electron)
-   * or open high-precision native browser print dialog (Web)
+   * Send silent or direct print to hardware printer without opening OS print dialog (Electron / Native Spooler)
+   * or open high-precision native browser print dialog (Web fallback)
    */
   public async printDirect(options: PrintDirectOptions): Promise<PrintJobResult> {
+    // 1. Electron Desktop Mode
     if (this.isDesktop() && window.electronAPI) {
       return window.electronAPI.printDirect({
         silent: options.silent !== false, // Always defaults to silent direct print in Electron
@@ -227,7 +229,28 @@ class NativeHardwareService {
       });
     }
 
-    // Web Browser execution: real iframe-based 1:1 print
+    // 2. Web Local Hardware Spooler API (communicates with PrintHubSpooler.exe via Vite Dev server)
+    if (typeof window !== 'undefined' && options.dataUrl) {
+      try {
+        const res = await fetch('/api/print', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(options),
+        });
+        if (res.ok) {
+          const result = await res.json();
+          if (result && result.success) {
+            return result;
+          } else if (result && result.error) {
+            console.warn('Native Spooler /api/print returned error:', result.error);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to call /api/print hardware bridge, falling back to browser print:', err);
+      }
+    }
+
+    // 3. Fallback: Web Browser iframe print
     return this.printInBrowser(options);
   }
 
@@ -365,6 +388,38 @@ class NativeHardwareService {
   public async getScanFolder(): Promise<string | null> {
     if (!this.isDesktop() || !window.electronAPI) return null;
     return window.electronAPI.getScanFolder();
+  }
+
+  /**
+   * Open Windows Native Printer Properties / Printing Preferences Dialog
+   */
+  public async openPrinterProperties(printerName?: string): Promise<boolean> {
+    const target = printerName || this.getDefaultPrinterName() || '';
+    if (!target) return false;
+
+    // 1. Electron Desktop Bridge
+    if (this.isDesktop() && window.electronAPI?.openPrinterProperties) {
+      return window.electronAPI.openPrinterProperties(target);
+    }
+
+    // 2. Web Local Hardware Bridge (/api/printer-properties)
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch('/api/printer-properties', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ printerName: target }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          return Boolean(json.success);
+        }
+      } catch (err) {
+        console.warn('Failed to open printer properties via /api/printer-properties:', err);
+      }
+    }
+
+    return false;
   }
 
   /**

@@ -84,13 +84,13 @@ const initialState: PassportState = {
   },
 
   layoutConfig: {
-    copies: 8,
+    copies: 4,
     paperSize: getPaperSize('a4'),
     customWidthMm: 210,
     customHeightMm: 297,
     gapMm: 3,
     marginMm: 3,
-    rollerSafeMarginMm: 8,
+    rollerSafeMarginMm: 3,
     showRollerGuide: false,
     alignPos: 'top-left',
     showCutlines: true,

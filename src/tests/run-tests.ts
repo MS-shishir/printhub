@@ -145,6 +145,84 @@ runTest('maxCopiesThatFit calculates correct maximum copy count', () => {
   assert.equal(maxFit, 4); // 2x2 = 4 max fit on 4R
 });
 
+runTest('calculateLayout: A4 Full Size photo (210x297mm) places 1 full copy centered on A4 sheet', () => {
+  const albumA4Template: PassportTemplate = {
+    id: 'album_a4_full',
+    country: 'Photo Album',
+    name: 'A4 Full Page (210×297mm)',
+    flag: '📸',
+    widthMm: 210,
+    heightMm: 297,
+    dpi: 300,
+    faceHeightRatio: 0.65,
+    eyePosition: { xRatio: 0.5, yRatio: 0.42 },
+    headMargin: { topRatio: 0.08, bottomRatio: 0.12, leftRatio: 0.10, rightRatio: 0.10 },
+    bgColor: '#ffffff',
+    bgColorName: 'White',
+    rules: '',
+    category: 'album',
+  };
+
+  const config: LayoutConfig = {
+    copies: 1 as any,
+    paperSize: paperA4,
+    customWidthMm: 210,
+    customHeightMm: 297,
+    gapMm: 0,
+    marginMm: 0,
+    alignPos: 'center',
+    showCutlines: false,
+    showPrintHeader: false,
+    autoFit: true,
+  };
+
+  const layout = calculateLayout(albumA4Template, config);
+  assert.equal(layout.placed.length, 1);
+  assert.equal(layout.placed[0].widthMm, 210);
+  assert.equal(layout.placed[0].heightMm, 297);
+  assert.equal(layout.placed[0].xMm, 0);
+  assert.equal(layout.placed[0].yMm, 0);
+});
+
+runTest('calculateLayout: A4 Half Size Landscape (210x148.5mm) fits 2 copies on A4 sheet', () => {
+  const albumHalfTemplate: PassportTemplate = {
+    id: 'album_a4_half_landscape',
+    country: 'Photo Album',
+    name: 'A4 Half Size Landscape (210×148.5mm)',
+    flag: '🖼️',
+    widthMm: 210,
+    heightMm: 148.5,
+    dpi: 300,
+    faceHeightRatio: 0.65,
+    eyePosition: { xRatio: 0.5, yRatio: 0.42 },
+    headMargin: { topRatio: 0.08, bottomRatio: 0.12, leftRatio: 0.10, rightRatio: 0.10 },
+    bgColor: '#ffffff',
+    bgColorName: 'White',
+    rules: '',
+    category: 'album',
+  };
+
+  const config: LayoutConfig = {
+    copies: 2 as any,
+    paperSize: paperA4,
+    customWidthMm: 210,
+    customHeightMm: 297,
+    gapMm: 0,
+    marginMm: 0,
+    alignPos: 'top-left',
+    showCutlines: false,
+    showPrintHeader: false,
+    autoFit: true,
+  };
+
+  const layout = calculateLayout(albumHalfTemplate, config);
+  assert.equal(layout.placed.length, 2);
+  assert.equal(layout.columns, 1);
+  assert.equal(layout.rows, 2);
+  assert.equal(layout.placed[0].yMm, 0);
+  assert.equal(layout.placed[1].yMm, 148.5);
+});
+
 // ── 3. State History Engine Tests ─────────────────────────────────────────
 console.log('\n▶ [3] State History Engine (HistoryEngine.ts)');
 
@@ -249,6 +327,82 @@ runTest('ColorUtils: Mathematical Color Decontamination (Unmixing spilled backgr
   assert.ok(decontam.r < 60, 'Decontaminated R should restore dark hair value');
   assert.ok(decontam.g < 60, 'Decontaminated G should restore dark hair value');
   assert.ok(decontam.b < 60, 'Decontaminated B should restore dark hair value');
+});
+
+// ── 6. 10-Stage MattingEngine & Morphological Pipeline Tests ─────────────
+console.log('\n▶ [6] 10-Stage MattingEngine & Morphological Pipeline');
+
+import { MattingEngine } from '../engines/MattingEngine';
+
+runTest('MattingEngine: Dilation, Erosion, Opening, and Closing math', () => {
+  const w = 10, h = 10;
+  const mask = new Uint8Array(w * h);
+  // Place a 2x2 square in center (x: 4..5, y: 4..5)
+  mask[4 * w + 4] = 255;
+  mask[4 * w + 5] = 255;
+  mask[5 * w + 4] = 255;
+  mask[5 * w + 5] = 255;
+
+  const dilated = MattingEngine.dilateMask(mask, w, h, 1);
+  assert.equal(dilated[3 * w + 4], 255, 'Dilated mask expands boundary by 1px');
+
+  const eroded = MattingEngine.erodeMask(dilated, w, h, 1);
+  assert.equal(eroded[4 * w + 4], 255, 'Erosion returns center pixels');
+
+  const closed = MattingEngine.morphologicalClosing(mask, w, h, 1);
+  assert.equal(closed[4 * w + 4], 255, 'Closing preserves foreground core');
+});
+
+runTest('MattingEngine: Topological Hole-Filling protects interior suits & ties', () => {
+  const w = 10, h = 10;
+  const mask = new Uint8Array(w * h);
+  // Create a hollow square foreground ring (x: 2..7, y: 2..7) with empty center (4,4)
+  for (let y = 2; y <= 7; y++) {
+    for (let x = 2; x <= 7; x++) {
+      mask[y * w + x] = 255;
+    }
+  }
+  mask[4 * w + 4] = 0; // Internal hole/pinhole (e.g. dark tie button or pattern)
+  mask[4 * w + 5] = 0;
+
+  const filled = MattingEngine.fillInteriorHoles(mask, w, h);
+  assert.equal(filled[4 * w + 4], 255, 'Enclosed internal hole is filled to solid 255');
+  assert.equal(filled[4 * w + 5], 255, 'Enclosed internal hole is filled to solid 255');
+  assert.equal(filled[0], 0, 'Outer background exterior remains 0');
+});
+
+runTest('MattingEngine: Adaptive Trimap Generation produces 3 distinct zones', () => {
+  const w = 20, h = 20;
+  const mask = new Uint8Array(w * h);
+  for (let y = 5; y <= 15; y++) {
+    for (let x = 5; x <= 15; x++) {
+      mask[y * w + x] = 255;
+    }
+  }
+
+  const trimap = MattingEngine.generateTrimap(mask, w, h, 2);
+  assert.equal(trimap[10 * w + 10], 255, 'Deep interior is Definite Foreground (255)');
+  assert.equal(trimap[0], 0, 'Outer boundary is Definite Background (0)');
+  assert.equal(trimap[5 * w + 5], 128, 'Perimeter edge is Unknown Transition Band (128)');
+});
+
+runTest('MattingEngine: Gaussian Falloff Brush Stroke calculates correct weights', () => {
+  const w = 20, h = 20;
+  const alpha = new Uint8ClampedArray(w * h); // start with 0 (background)
+  const rgb = new Uint8ClampedArray(w * h * 4);
+
+  const updated = MattingEngine.applyBrushStroke(
+    alpha,
+    rgb,
+    w,
+    h,
+    [{ x: 10, y: 10 }],
+    { radius: 5, hardness: 0.2, strength: 1.0, mode: 'add_subject' }
+  );
+
+  assert.equal(updated[10 * w + 10], 255, 'Center of Add Subject brush stroke is 255');
+  assert.ok(updated[10 * w + 13] > 0 && updated[10 * w + 13] < 255, 'Edge has soft Gaussian falloff');
+  assert.equal(updated[0], 0, 'Pixels outside radius remain 0');
 });
 
 // ── Test Summary ─────────────────────────────────────────────────────────

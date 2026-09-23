@@ -337,12 +337,105 @@ export default function PrintPreview() {
           const isRotated = item.rotateDegrees === 90 || isRotatedGlobal;
           const pW = isRotated ? (item.heightMm || 45) : (item.widthMm || 35);
           const pH = isRotated ? (item.widthMm || 35) : (item.heightMm || 45);
+
+          // 1. Large Album / Full Page Photo Handling (e.g. 210×297mm or 148×210mm on A4)
+          const isFullPage = pW >= (paperW * 0.85) && pH >= (paperH * 0.85);
+          const isHalfPage = (pW >= (paperW * 0.85) && pH >= (paperH * 0.4)) || (pH >= (paperH * 0.85) && pW >= (paperW * 0.4));
+
+          if (isFullPage) {
+            // Full Page photo placed 1:1 on sheet
+            const placeX = Math.max(0, (paperW - pW) / 2);
+            const placeY = Math.max(0, (paperH - pH) / 2);
+            batchList.push({
+              id: `item_${idCounter}_${item.id}`,
+              url: item.croppedUrl,
+              name: item.name,
+              xMm: placeX,
+              yMm: placeY,
+              widthMm: pW,
+              heightMm: pH,
+              rotateDegrees: isRotated ? 90 : 0,
+              trayItemId: item.id,
+            });
+            currentXMm = paperW;
+            currentYMm = paperH;
+            break;
+          }
+
+          if (isHalfPage) {
+            // Half Page photo (fits 2 photos on 1 sheet)
+            // If landscape half page (210×148.5mm), stack vertically
+            if (pW <= paperW) {
+              const placeX = Math.max(0, (paperW - pW) / 2);
+              const placeY = batchList.length === 0 ? 0 : (paperH / 2);
+              if (placeY + pH <= paperH + 2) {
+                batchList.push({
+                  id: `item_${idCounter}_${item.id}`,
+                  url: item.croppedUrl,
+                  name: item.name,
+                  xMm: placeX,
+                  yMm: placeY,
+                  widthMm: pW,
+                  heightMm: Math.min(pH, paperH / 2),
+                  rotateDegrees: isRotated ? 90 : 0,
+                  trayItemId: item.id,
+                });
+                if (batchList.length >= 2) {
+                  currentXMm = paperW;
+                  currentYMm = paperH;
+                  break;
+                }
+                continue;
+              }
+            }
+          }
+
+          // 2. Oversized photo for smaller paper (e.g. 10x12" on A4 paper)
+          if (pW > paperW || pH > paperH) {
+            const scaleRatio = Math.min((paperW - 4) / pW, (paperH - 4) / pH);
+            const fittedW = Math.round(pW * scaleRatio * 10) / 10;
+            const fittedH = Math.round(pH * scaleRatio * 10) / 10;
+            const placeX = Math.max(0, (paperW - fittedW) / 2);
+            const placeY = Math.max(0, (paperH - fittedH) / 2);
+            batchList.push({
+              id: `item_${idCounter}_${item.id}`,
+              url: item.croppedUrl,
+              name: `${item.name} (Fitted)`,
+              xMm: placeX,
+              yMm: placeY,
+              widthMm: fittedW,
+              heightMm: fittedH,
+              rotateDegrees: isRotated ? 90 : 0,
+              trayItemId: item.id,
+            });
+            currentXMm = paperW;
+            currentYMm = paperH;
+            break;
+          }
+
+          // 3. Standard Multi-grid Placement (Passport, Stamp, 4R, 5R, etc.)
           if (currentXMm + pW > paperW - rightMarginMm) {
             currentXMm = leftMarginMm;
             currentYMm += rowMaxHMm + gapMm;
             rowMaxHMm = 0;
           }
-          if (currentYMm + pH > paperH - botMarginMm) break;
+          if (currentYMm + pH > paperH - botMarginMm) {
+            // If nothing placed yet, place at least 1 copy centered
+            if (batchList.length === 0) {
+              batchList.push({
+                id: `item_${idCounter}_${item.id}`,
+                url: item.croppedUrl,
+                name: item.name,
+                xMm: Math.max(0, (paperW - pW) / 2),
+                yMm: Math.max(0, (paperH - pH) / 2),
+                widthMm: pW,
+                heightMm: pH,
+                rotateDegrees: isRotated ? 90 : 0,
+                trayItemId: item.id,
+              });
+            }
+            break;
+          }
           rowMaxHMm = Math.max(rowMaxHMm, pH);
           batchList.push({
             id: `item_${idCounter}_${item.id}`,
@@ -358,13 +451,69 @@ export default function PrintPreview() {
           currentXMm += pW + gapMm;
         }
       }
+    } else {
+      const activePhoto = state.croppedImage || state.processedImage || state.originalImage;
+      if (activePhoto) {
+        const isRotated = isRotatedGlobal;
+        const pW = isRotated ? template.heightMm : template.widthMm;
+        const pH = isRotated ? template.widthMm : template.heightMm;
+
+        const isFullPage = pW >= (paperW * 0.85) && pH >= (paperH * 0.85);
+        const isHalfPage = (pW >= (paperW * 0.85) && pH >= (paperH * 0.4)) || (pH >= (paperH * 0.85) && pW >= (paperW * 0.4));
+
+        if (isFullPage) {
+          const placeX = Math.max(0, (paperW - pW) / 2);
+          const placeY = Math.max(0, (paperH - pH) / 2);
+          batchList.push({
+            id: `active_0`,
+            url: activePhoto,
+            name: template.name,
+            xMm: placeX,
+            yMm: placeY,
+            widthMm: pW,
+            heightMm: pH,
+            rotateDegrees: isRotated ? 90 : 0,
+          });
+        } else if (isHalfPage) {
+          const placeX = Math.max(0, (paperW - pW) / 2);
+          const copies = Math.min(layoutConfig.copies || 1, 2);
+          for (let i = 0; i < copies; i++) {
+            const placeY = i === 0 ? 0 : (paperH / 2);
+            batchList.push({
+              id: `active_${i}`,
+              url: activePhoto,
+              name: template.name,
+              xMm: placeX,
+              yMm: placeY,
+              widthMm: pW,
+              heightMm: Math.min(pH, paperH / 2),
+              rotateDegrees: isRotated ? 90 : 0,
+            });
+          }
+        } else {
+          const layout = calculateLayout(template, layoutConfig);
+          for (let i = 0; i < layout.placed.length; i++) {
+            const p = layout.placed[i];
+            batchList.push({
+              id: `active_${i}`,
+              url: activePhoto,
+              name: template.name,
+              xMm: p.xMm,
+              yMm: p.yMm,
+              widthMm: p.widthMm,
+              heightMm: p.heightMm,
+              rotateDegrees: layoutConfig.rotatePhotoDegrees || 0,
+            });
+          }
+        }
+      }
     }
 
     setPlacedItemsRaw(batchList);
     setSelectedIndex(null);
     undoStackRef.current = [];
     redoStackRef.current = [];
-  }, [processedTray, layoutConfig, template, paperW, paperH]);
+  }, [processedTray, layoutConfig, template, paperW, paperH, state.croppedImage, state.processedImage, state.originalImage]);
 
   // ── Mouse Drag ───────────────────────────────────────────────────────────────
   const handleMouseDownCanvas = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
