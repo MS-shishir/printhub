@@ -12,6 +12,7 @@
 // 10. High-DPI Transparent PNG Output
 
 import { removeBackgroundViaFastAPI, checkFastAPIBackendHealth, enhanceImageViaFastAPI } from '../../services/fastapiBgRemoval';
+import { AiOmniRouter } from '../../services/aiOmniRouter';
 import { segmentPortraitWithMediaPipe, segmentPortraitWithISNet } from './selfie-segmentation.service';
 import { BackgroundConfig, FaceDetectionResult } from '../types/passport-types';
 import {
@@ -401,6 +402,115 @@ export async function removeBackgroundClassical(
 }
 
 /**
+ * Precision Studio Edge Refiner & Color Decontamination
+ * Eliminates white background glow, edge halos, and light spill around hair and clothing.
+ * Performs smoothstep alpha choke and inward color unmixing (Photoshop/ChatGPT Refine Edge standard).
+ */
+export async function refineAiCutoutEdge(
+  transparentPngUrl: string,
+  options: { chokeThreshold?: number; suppressWhiteHalo?: boolean } = {}
+): Promise<string> {
+  try {
+    const img = await loadImage(transparentPngUrl);
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+
+    const { canvas, ctx } = createOffscreenCanvas(w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    // Fast alpha cache
+    const origAlpha = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      origAlpha[i] = data[i * 4 + 3];
+    }
+
+    const chokeLimit = options.chokeThreshold ?? 55;
+
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        const a = origAlpha[idx];
+
+        if (a === 0) continue;
+
+        // Check if neighboring pixels are transparent / transition zone
+        const nLeft = origAlpha[idx - 1];
+        const nRight = origAlpha[idx + 1];
+        const nUp = origAlpha[idx - w];
+        const nDown = origAlpha[idx + w];
+
+        const isBoundary = nLeft < 200 || nRight < 200 || nUp < 200 || nDown < 200;
+
+        if (isBoundary) {
+          const idx4 = idx * 4;
+
+          // 1. Choke outermost faint fuzzy fringe
+          if (a < chokeLimit) {
+            data[idx4 + 3] = 0;
+            continue;
+          }
+
+          // 2. Choke alpha curve (smoothstep inward edge)
+          const normA = (a - chokeLimit) / (255 - chokeLimit);
+          const smoothA = normA * normA * (3 - 2 * normA);
+          data[idx4 + 3] = Math.round(smoothA * 255);
+
+          // 3. Color Decontamination: Remove white wall halo from hair and shoulders
+          if (options.suppressWhiteHalo !== false) {
+            const r = data[idx4];
+            const g = data[idx4 + 1];
+            const b = data[idx4 + 2];
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+            // If boundary pixel is contaminated by bright white/light background
+            if (brightness > 130) {
+              let bestR = r, bestG = g, bestB = b;
+              let minLum = brightness;
+
+              const neighbors = [
+                idx - 1, idx + 1, idx - w, idx + w,
+                idx - w - 1, idx - w + 1, idx + w - 1, idx + w + 1
+              ];
+
+              for (const n of neighbors) {
+                if (origAlpha[n] > 220) {
+                  const nr = data[n * 4];
+                  const ng = data[n * 4 + 1];
+                  const nb = data[n * 4 + 2];
+                  const nLum = (nr * 299 + ng * 587 + nb * 114) / 1000;
+                  if (nLum < minLum) {
+                    minLum = nLum;
+                    bestR = nr;
+                    bestG = ng;
+                    bestB = nb;
+                  }
+                }
+              }
+
+              // Blend contaminated white edge toward true dark hair/clothing color
+              if (minLum < brightness - 15) {
+                const blend = Math.min(0.92, (brightness - 130) / 90);
+                data[idx4] = Math.round(r * (1 - blend) + bestR * blend);
+                data[idx4 + 1] = Math.round(g * (1 - blend) + bestG * blend);
+                data[idx4 + 2] = Math.round(b * (1 - blend) + bestB * blend);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL('image/png', 1.0);
+  } catch (err) {
+    console.warn('[refineAiCutoutEdge error, returning unrefined]', err);
+    return transparentPngUrl;
+  }
+}
+
+/**
  * Universal Background Removal Pipeline:
  * 1. FastAPI BiRefNet / RMBG-2.0 (if Python backend is running)
  * 2. Client-Side IS-Net / RMBG (via WebAssembly/WebGPU)
@@ -411,21 +521,42 @@ export async function removeBackgroundAI(
   src: string,
   options: AIRemovalOptions = {}
 ): Promise<string> {
-  // 1. If FastAPI backend is active (BiRefNet / RMBG-2.0):
+  // 1. Top Tier: Local FastAPI High-Precision AI Backend (BiRefNet-Portrait + Sub-Pixel Alpha)
+  // Preserves 100% fine hair strands, white/grey beards, prayer caps, and clothing textures
   try {
     const isBackendAvailable = await checkFastAPIBackendHealth();
     if (isBackendAvailable) {
-      return await removeBackgroundViaFastAPI(src, {
+      console.log('[removeBackgroundAI] Using Local High-Precision BiRefNet AI Backend...');
+      const fastApiResult = await removeBackgroundViaFastAPI(src, {
         model: options.model === 'rmbg' ? 'rmbg' : 'birefnet',
         refine: true,
         enhance: options.enhance ?? false
       });
+      if (fastApiResult) {
+        return fastApiResult;
+      }
     }
   } catch (fastApiErr) {
-    console.warn('[FastAPI Offline / Client-Side Neural Pipeline Active]', fastApiErr);
+    console.warn('[FastAPI Backend Skipped / Falling back to Cloud/Client]', fastApiErr);
   }
 
-  // 2. Client-Side IS-Net Neural Background Removal
+  // 2. Secondary Gateway: AI Omni Router (Cloud Failover: BGNinja -> withoutBG)
+  try {
+    const omniResult = await AiOmniRouter.removeBackground(src);
+    if (omniResult && omniResult.success && omniResult.dataUrl) {
+      console.log(`[AI Omni Router] Background removed via ${omniResult.provider} in ${omniResult.durationMs}ms`);
+      // Refine cloud cutout edges with gentle threshold without darkening white beards/caps
+      const polishedUrl = await refineAiCutoutEdge(omniResult.dataUrl, {
+        chokeThreshold: 15,
+        suppressWhiteHalo: false
+      });
+      return polishedUrl;
+    }
+  } catch (omniErr) {
+    console.warn('[AI Omni Router Cloud Tiers Skipped / Fallback]', omniErr);
+  }
+
+  // 3. Client-Side IS-Net Neural Background Removal
   try {
     const isNetResult = await segmentPortraitWithISNet(src);
     if (isNetResult) {
@@ -435,7 +566,7 @@ export async function removeBackgroundAI(
     console.warn('[IS-Net fallback to MediaPipe Guided Filter]', isNetErr);
   }
 
-  // 3. Client-Side MediaPipe Neural Segmentation + 15-Stage Guided Filter Engine
+  // 4. Client-Side MediaPipe Neural Segmentation + 15-Stage Guided Filter Engine
   return await removeBackgroundClassical(src, options);
 }
 

@@ -154,45 +154,15 @@ export function usePassportWorkflow() {
     }
   }, [state.selectedTemplateId, state.originalImage, state.imageNaturalWidth, state.imageNaturalHeight, triggerFaceDetection]);
 
-  // ── Step 3: Background Removal Trigger on Config Changes ───────────────────
+  // ── Step 3: Background Restore Handler When Explicitly Disabled ─────────────
+  // Only restore raw image if background removal was explicitly toggled from ON to OFF
+  const prevBgEnabledRef = useRef(state.bgConfig.isEnabled);
   useEffect(() => {
-    const rawImg = state.originalImage;
-    if (!rawImg || !state.bgConfig.isEnabled) {
-      if (!state.bgConfig.isEnabled && rawImg) {
-        dispatch({ type: 'SET_PROCESSED_IMAGE', payload: rawImg });
-      }
-      return;
+    if (prevBgEnabledRef.current && !state.bgConfig.isEnabled && state.originalImage) {
+      dispatch({ type: 'SET_PROCESSED_IMAGE', payload: state.originalImage });
     }
-
-    if (bgDebounce.current) clearTimeout(bgDebounce.current);
-    bgDebounce.current = setTimeout(async () => {
-      try {
-        dispatch({ type: 'SET_PROCESSING', payload: { isProcessing: true, message: '✨ Removing Background…' } });
-        const result = await removeBackgroundAI(rawImg, {
-          tolerance: state.bgConfig.tolerance,
-          keyColor: state.bgConfig.keyColor,
-          edgeRadius: Math.max(1, Math.min(5, Math.round(state.bgConfig.feather / 2))),
-          edgeQuality: 'high',
-          faceDetection: state.faceDetection
-        });
-        dispatch({ type: 'SET_PROCESSED_IMAGE', payload: result });
-      } catch (e) {
-        console.warn('[BG Removal]', e);
-      } finally {
-        dispatch({ type: 'SET_PROCESSING', payload: { isProcessing: false } });
-      }
-    }, 200);
-
-    return () => {
-      if (bgDebounce.current) clearTimeout(bgDebounce.current);
-    };
-  }, [
-    state.originalImage,
-    state.bgConfig.isEnabled,
-    state.bgConfig.keyColor,
-    state.bgConfig.tolerance,
-    state.bgConfig.feather,
-  ]);
+    prevBgEnabledRef.current = state.bgConfig.isEnabled;
+  }, [state.bgConfig.isEnabled, state.originalImage, dispatch]);
 
   // ── Paste from Clipboard ─────────────────────────────────────────────────
   const handlePaste = useCallback(async (e: ClipboardEvent) => {

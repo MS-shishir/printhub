@@ -18,9 +18,10 @@ interface PortraitRetouchModalProps {
 
 const PRESET_LIST = [
   { id: 'original', name: 'Original', icon: '🟢', description: 'Untouched photo' },
+  { id: 'upscale_4k', name: '4K Ultra HD', icon: '⚡', description: '4x Resolution Upscale & Crystal Unblur' },
   { id: 'natural', name: 'Natural HD', icon: '✨', description: 'Subtle smooth & clear unblur' },
   { id: 'soft_skin', name: 'Soft Skin', icon: '🌿', description: 'Skin smooth & shine fix' },
-  { id: 'studio', name: 'Studio Pro', icon: '💼', description: 'Shadow removal & studio CLAHE' },
+  { id: 'studio', name: 'Studio Pro', icon: '💼', description: 'Crisp studio detail' },
   { id: 'bright', name: 'Bright HD', icon: '☀️', description: 'Exposure & skin tone lift' },
   { id: 'balanced', name: 'Balanced', icon: '🎨', description: 'Color balance & even skin' },
   { id: 'shadow_fix', name: 'Shadow Fix', icon: '🌙', description: 'Deep facial shadow removal' },

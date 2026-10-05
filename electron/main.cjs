@@ -7,7 +7,16 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+
+// Load environment variables securely into Electron Main (keys never leaked to renderer)
+try {
+  require('dotenv').config();
+} catch (e) {
+  // dotenv optional in bundled production
+}
+
 const { initAutoUpdater } = require('./updater.cjs');
+const { startPythonAiServer, stopPythonAiServer } = require('./aiServerManager.cjs');
 
 let mainWindow = null;
 let currentScanWatcher = null;
@@ -744,9 +753,163 @@ ipcMain.on('printhub:window-maximize', () => {
 });
 ipcMain.on('printhub:window-close', () => mainWindow?.close());
 
+// ── 7. AI Omni Router Gateway ───────────────────────────────────────────────
+// Secure backend execution preventing API keys and requests from being exposed to renderer.
+ipcMain.handle('printhub:ai-remove-bg', async (_event, options) => {
+  const { imageBase64 } = options || {};
+  if (!imageBase64) {
+    return { success: false, error: 'No image data provided', fallbackToLocal: true };
+  }
+
+  // Convert Base64 or DataURL to Buffer
+  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+  const imageBuffer = Buffer.from(base64Data, 'base64');
+
+  // ── Tier 1: BGNinja (Zero-config, No key required, 10/day free) ──
+  try {
+    const blob = new Blob([imageBuffer], { type: 'image/png' });
+    const formData = new FormData();
+    formData.append('file', blob, 'photo.png');
+
+    const bgNinjaRes = await fetch('https://bgninja.com/api/remove', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'User-Agent': 'PrintHub-Studio-Desktop/1.2.0',
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (bgNinjaRes.ok) {
+      const arrayBuffer = await bgNinjaRes.arrayBuffer();
+      const outputBase64 = `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+      return {
+        success: true,
+        provider: 'BGNinja',
+        dataUrl: outputBase64,
+        quotaInfo: 'BGNinja (Free Tier, No Key)',
+      };
+    } else {
+      console.warn(`[AI Omni Router] BGNinja returned status ${bgNinjaRes.status}: ${bgNinjaRes.statusText}`);
+    }
+  } catch (bgNinjaErr) {
+    console.warn('[AI Omni Router] BGNinja failed or timed out:', bgNinjaErr.message);
+  }
+
+  // ── Tier 2: withoutBG (Requires WITHOUTBG_API_KEY) ──
+  const withoutBgKey = process.env.WITHOUTBG_API_KEY;
+  if (withoutBgKey) {
+    try {
+      const blob = new Blob([imageBuffer], { type: 'image/png' });
+      const formData = new FormData();
+      formData.append('image', blob, 'photo.png');
+
+      const withoutBgRes = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
+        method: 'POST',
+        headers: {
+          'X-API-Key': withoutBgKey,
+        },
+        body: formData,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (withoutBgRes.ok) {
+        const contentType = withoutBgRes.headers.get('content-type') || '';
+        let outputBase64 = '';
+        if (contentType.includes('application/json')) {
+          const json = await withoutBgRes.json();
+          outputBase64 = json.result || json.image || json.data;
+          if (outputBase64 && !outputBase64.startsWith('data:')) {
+            outputBase64 = `data:image/png;base64,${outputBase64}`;
+          }
+        } else {
+          const arrayBuffer = await withoutBgRes.arrayBuffer();
+          outputBase64 = `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+        }
+
+        if (outputBase64) {
+          return {
+            success: true,
+            provider: 'withoutBG',
+            dataUrl: outputBase64,
+            quotaInfo: 'withoutBG Cloud API',
+          };
+        }
+      } else {
+        console.warn(`[AI Omni Router] withoutBG returned status ${withoutBgRes.status}`);
+      }
+    } catch (withoutBgErr) {
+      console.warn('[AI Omni Router] withoutBG failed:', withoutBgErr.message);
+    }
+  }
+
+  // ── Tier 3: Signal renderer to use local 15-stage MattingEngine fallback ──
+  return {
+    success: false,
+    fallbackToLocal: true,
+    reason: 'Cloud providers exhausted or offline. Switching to local neural matting engine.',
+  };
+});
+
+ipcMain.handle('printhub:ai-ocr', async (_event, options) => {
+  const { imageBase64, language = 'eng' } = options || {};
+  if (!imageBase64) {
+    return { success: false, error: 'No image data provided for OCR' };
+  }
+
+  // Tier 1: OCR.space API
+  const ocrKey = process.env.OCR_SPACE_API_KEY || 'helloworld';
+  try {
+    const formData = new FormData();
+    formData.append('base64Image', imageBase64);
+    formData.append('language', language === 'bn' ? 'ben' : 'eng');
+    formData.append('isOverlayRequired', 'false');
+    formData.append('detectOrientation', 'true');
+    formData.append('scale', 'true');
+    formData.append('apikey', ocrKey);
+
+    const ocrRes = await fetch('https://api.ocr.space/parse/image', {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (ocrRes.ok) {
+      const data = await ocrRes.json();
+      if (data && !data.IsErroredOnProcessing && data.ParsedResults && data.ParsedResults.length > 0) {
+        const parsedText = data.ParsedResults.map(r => r.ParsedText).join('\n');
+        return {
+          success: true,
+          provider: 'OCR.space',
+          text: parsedText,
+          parsedResults: data.ParsedResults,
+        };
+      }
+    }
+  } catch (ocrErr) {
+    console.warn('[AI Omni Router] OCR.space failed:', ocrErr.message);
+  }
+
+  return {
+    success: false,
+    error: 'OCR provider unavailable or timed out.',
+  };
+});
+
+ipcMain.handle('printhub:ai-get-status', async () => {
+  return {
+    bgninja: { active: true, requiresKey: false, name: 'BGNinja (Tier 1)' },
+    withoutbg: { active: Boolean(process.env.WITHOUTBG_API_KEY), requiresKey: true, name: 'withoutBG (Tier 2)' },
+    ocrSpace: { active: true, requiresKey: false, name: 'OCR.space' },
+    gemini: { active: Boolean(process.env.GEMINI_API_KEY), requiresKey: true, name: 'Gemini Vision / Flash' },
+    cloudflare: { active: Boolean(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID), requiresKey: true, name: 'Cloudflare Workers AI' }
+  };
+});
+
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow();
+  startPythonAiServer();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -757,4 +920,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  stopPythonAiServer();
 });

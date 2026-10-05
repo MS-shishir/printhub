@@ -18,7 +18,9 @@
     "electron:build": "vite build --emptyOutDir && electron-builder --win",
     "electron:build:dir": "vite build --emptyOutDir && electron-builder --win --dir",
     "electron:release": "vite build --emptyOutDir && electron-builder --win -p always",
-    "package": "npm run electron:build"
+    "package": "npm run electron:build",
+    "ai:server": "start python_backend/start.bat",
+    "ai:server:manual": "cd python_backend && .\\venv\\Scripts\\python.exe server.py"
   },
   "build": {
     "appId": "com.printhub.studio",

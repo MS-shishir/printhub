@@ -425,13 +425,26 @@ namespace PrintHubSpooler
                     // Render pristine high-DPI image to printer DC
                     using (Graphics g = Graphics.FromHdc(hdc))
                     {
+                        // Ensure GDI+ operates in raw physical device pixels (matching GetDeviceCaps).
+                        // By default, Graphics.FromHdc on a printer DC uses GraphicsUnit.Display (1/100 inch),
+                        // which would cause a 6.0x (600 DPI / 100) unintended zoom blow-up.
+                        g.PageUnit = GraphicsUnit.Pixel;
                         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                         g.SmoothingMode = SmoothingMode.HighQuality;
                         g.CompositingQuality = CompositingQuality.HighQuality;
 
-                        // Draw full bleed / fit into printable area
-                        var destRect = new Rectangle(0, 0, targetWidth, targetHeight);
+                        // Fit image proportionally into the target printable area to preserve exact aspect ratio
+                        double scaleX = (double)targetWidth / srcImage.Width;
+                        double scaleY = (double)targetHeight / srcImage.Height;
+                        double fitScale = Math.Min(scaleX, scaleY);
+
+                        int drawW = (int)Math.Round(srcImage.Width * fitScale);
+                        int drawH = (int)Math.Round(srcImage.Height * fitScale);
+                        int drawX = (targetWidth - drawW) / 2;
+                        int drawY = (targetHeight - drawH) / 2;
+
+                        var destRect = new Rectangle(drawX, drawY, drawW, drawH);
                         g.DrawImage(srcImage, destRect, 0, 0, srcImage.Width, srcImage.Height, GraphicsUnit.Pixel);
                     }
 

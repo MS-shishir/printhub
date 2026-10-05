@@ -13,6 +13,7 @@ import { getPaperSize } from '../services/template.service';
 type PassportAction =
   | { type: 'SET_IMAGE'; payload: { original: string; processed: string; name: string; naturalWidth: number; naturalHeight: number } }
   | { type: 'SET_PROCESSED_IMAGE'; payload: string }
+  | { type: 'SET_ORIGINAL_IMAGE'; payload: string }
   | { type: 'SET_CROPPED_IMAGE'; payload: string | null }
   | { type: 'SET_TEMPLATE'; payload: { templateId: string; customWidth?: number; customHeight?: number } }
   | { type: 'SET_BG_CONFIG'; payload: Partial<BackgroundConfig> }
@@ -183,6 +184,9 @@ function passportReducer(state: PassportState, action: PassportAction): Passport
 
     case 'SET_PROCESSED_IMAGE':
       return { ...state, processedImage: action.payload };
+
+    case 'SET_ORIGINAL_IMAGE':
+      return { ...state, originalImage: action.payload };
 
     case 'SET_CROPPED_IMAGE':
       return { ...state, croppedImage: action.payload };

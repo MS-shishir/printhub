@@ -48,7 +48,7 @@ export async function removeBackgroundViaFastAPI(
   const response = await fetch(endpoint, {
     method: 'POST',
     body: formData,
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(60000), // 60s for deep neural network matting on CPU/GPU
   });
 
   if (!response.ok) {
@@ -282,7 +282,7 @@ export async function checkFastAPIBackendHealth(backendUrl = DEFAULT_BACKEND_URL
   try {
     const res = await fetch(`${backendUrl}/health`, { 
       method: 'GET', 
-      signal: AbortSignal.timeout(500) // Fast 500ms check
+      signal: AbortSignal.timeout(2500) // 2.5s resilient health check
     });
     const isHealthy = res.ok;
     cachedBackendHealth = { isHealthy, timestamp: now };

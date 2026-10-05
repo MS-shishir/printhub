@@ -1,0 +1,32 @@
+# PrintHub Studio - High-Precision Hair Matting & AI Server Requirements
+
+# Core Web Framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+
+# Deep Learning (PyTorch)
+# For GPU (NVIDIA CUDA):
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Vision & Transformer Models
+transformers>=4.40.0
+timm>=0.9.16
+accelerate>=0.28.0
+huggingface-hub>=0.22.0
+einops>=0.8.0
+kornia>=0.7.0
+
+# Image Processing & Matting
+opencv-python>=4.8.0
+pillow>=10.0.0
+numpy>=1.24.0
+pymatting>=1.1.12
+scipy>=1.11.0
+
+# Ready-made Multi-Model Fallback Engine
+rembg[gpu]>=2.0.57; sys_platform == 'linux' or sys_platform == 'win32'
+rembg>=2.0.57; sys_platform == 'darwin'

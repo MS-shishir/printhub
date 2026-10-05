@@ -8,7 +8,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Modal from '../../../components/ui/Modal';
 import { Users, Upload, Sliders, Sun, Wand2, Check, RefreshCw, Move, ZoomIn, ZoomOut, ArrowRightLeft } from 'lucide-react';
-import { removeBackgroundViaFastAPI } from '../../../services/fastapiBgRemoval';
+import { removeBackgroundAI } from '../../services/image-processing.service';
 
 interface JointPhotoComposerModalProps {
   isOpen: boolean;
@@ -177,7 +177,7 @@ export default function JointPhotoComposerModal({
     if (!person1.src) return;
     setPerson1((prev) => ({ ...prev, isBgRemoving: true }));
     try {
-      const bgRemovedUrl = await removeBackgroundViaFastAPI(person1.src);
+      const bgRemovedUrl = await removeBackgroundAI(person1.src);
       const img = new Image();
       img.src = bgRemovedUrl;
       img.onload = () => {
@@ -195,7 +195,7 @@ export default function JointPhotoComposerModal({
     if (!person2.src) return;
     setPerson2((prev) => ({ ...prev, isBgRemoving: true }));
     try {
-      const bgRemovedUrl = await removeBackgroundViaFastAPI(person2.src);
+      const bgRemovedUrl = await removeBackgroundAI(person2.src);
       const img = new Image();
       img.src = bgRemovedUrl;
       img.onload = () => {

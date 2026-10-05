@@ -71,6 +71,22 @@ declare global {
       minimize: () => void;
       maximize: () => void;
       close: () => void;
+      aiRemoveBg?: (options: { imageBase64: string; options?: any }) => Promise<{
+        success: boolean;
+        provider?: string;
+        dataUrl?: string;
+        quotaInfo?: string;
+        fallbackToLocal?: boolean;
+        error?: string;
+      }>;
+      aiOcr?: (options: { imageBase64: string; language?: string }) => Promise<{
+        success: boolean;
+        provider?: string;
+        text?: string;
+        parsedResults?: any[];
+        error?: string;
+      }>;
+      aiGetStatus?: () => Promise<Record<string, { active: boolean; requiresKey: boolean; name: string }>>;
     };
   }
 }

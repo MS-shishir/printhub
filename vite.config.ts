@@ -141,6 +141,113 @@ function localPrinterApiPlugin(): Plugin {
           }
         });
       });
+
+      // 4. AI Omni Router Gateway (Bypasses browser CORS & protects secret keys)
+      server.middlewares.use('/api/ai/remove-bg', async (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        const chunks: Buffer[] = [];
+        req.on('data', chunk => { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); });
+        req.on('end', async () => {
+          try {
+            const rawBody = Buffer.concat(chunks).toString('utf-8');
+            const data = JSON.parse(rawBody || '{}');
+            const { imageBase64 } = data;
+            if (!imageBase64) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ success: false, error: 'No image provided' }));
+              return;
+            }
+
+            const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            const imageBuffer = Buffer.from(cleanBase64, 'base64');
+
+            // Tier 1: BGNinja (Zero key, fast, direct transparent PNG)
+            try {
+              const blob = new Blob([imageBuffer], { type: 'image/png' });
+              const formData = new FormData();
+              formData.append('file', blob, 'photo.png');
+
+              const bgNinjaRes = await fetch('https://bgninja.com/api/remove', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                },
+                signal: AbortSignal.timeout(20000),
+              });
+
+              if (bgNinjaRes.ok) {
+                const arrayBuffer = await bgNinjaRes.arrayBuffer();
+                const outputBase64 = `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({
+                  success: true,
+                  provider: 'BGNinja',
+                  dataUrl: outputBase64,
+                }));
+                return;
+              } else {
+                console.warn(`[Vite AI Gateway] BGNinja returned HTTP ${bgNinjaRes.status}`);
+              }
+            } catch (bgNinjaErr: any) {
+              console.warn('[Vite AI Gateway] BGNinja error:', bgNinjaErr?.message);
+            }
+
+            // Tier 2: withoutBG
+            const withoutBgKey = process.env.WITHOUTBG_API_KEY;
+            if (withoutBgKey) {
+              try {
+                const blob = new Blob([imageBuffer], { type: 'image/png' });
+                const formData = new FormData();
+                formData.append('image', blob, 'photo.png');
+
+                const withoutBgRes = await fetch('https://api.withoutbg.com/v1.0/image-without-background', {
+                  method: 'POST',
+                  headers: { 'X-API-Key': withoutBgKey },
+                  body: formData,
+                  signal: AbortSignal.timeout(20000),
+                });
+
+                if (withoutBgRes.ok) {
+                  const contentType = withoutBgRes.headers.get('content-type') || '';
+                  let outputBase64 = '';
+                  if (contentType.includes('application/json')) {
+                    const json = await withoutBgRes.json();
+                    outputBase64 = json.result || json.image || json.data;
+                    if (outputBase64 && !outputBase64.startsWith('data:')) {
+                      outputBase64 = `data:image/png;base64,${outputBase64}`;
+                    }
+                  } else {
+                    const arrayBuffer = await withoutBgRes.arrayBuffer();
+                    outputBase64 = `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+                  }
+
+                  if (outputBase64) {
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({
+                      success: true,
+                      provider: 'withoutBG',
+                      dataUrl: outputBase64,
+                    }));
+                    return;
+                  }
+                }
+              } catch (withoutBgErr: any) {
+                console.warn('[Vite AI Gateway] withoutBG error:', withoutBgErr?.message);
+              }
+            }
+
+            res.statusCode = 502;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: false, fallbackToLocal: true }));
+          } catch (e: any) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: false, error: e?.message }));
+          }
+        });
+      });
     },
   };
 }

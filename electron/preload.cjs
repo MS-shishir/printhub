@@ -41,4 +41,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Native PDF Rasterizer
   renderPdfPages: (options) => ipcRenderer.invoke('printhub:render-pdf-pages', options),
+
+  // AI Omni Router Bridge (Secure desktop gateway - zero key exposure in renderer)
+  aiRemoveBg: (options) => ipcRenderer.invoke('printhub:ai-remove-bg', options),
+  aiOcr: (options) => ipcRenderer.invoke('printhub:ai-ocr', options),
+  aiGetStatus: () => ipcRenderer.invoke('printhub:ai-get-status'),
 });
